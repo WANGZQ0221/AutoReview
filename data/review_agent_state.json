@@ -1,5 +1,161 @@
 {
   "apps": {},
-  "sessions": {},
-  "updated_at": 1781157433
+  "sessions": {
+    "oc_14a00d1a716bd127be96d9b8d7c3e6f8": {
+      "last_market_search": {
+        "query": "。",
+        "apps": [
+          {
+            "store": "apple_app_store",
+            "app_id": "1142110895",
+            "name": "抖音",
+            "developer": "Beijing Douyin Technology Co., Ltd.",
+            "package_name": "com.ss.iphone.ugc.Aweme",
+            "category": "Entertainment",
+            "url": "https://apps.apple.com/cn/app/%E6%8A%96%E9%9F%B3/id1142110895?uo=4",
+            "rating": 4.87568,
+            "rating_count": 52027825,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 1,
+            "raw_metrics": {
+              "download_metric": "not_public",
+              "country": "cn"
+            }
+          },
+          {
+            "store": "xiaomi_app_store",
+            "app_id": "com.qts.customer",
+            "name": "青团社兼职-海量同城日结兼职。",
+            "developer": "",
+            "package_name": "",
+            "category": "",
+            "url": "https://app.mi.com/details?id=com.qts.customer",
+            "rating": null,
+            "rating_count": null,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 1,
+            "raw_metrics": {
+              "download_metric": "public_page_best_effort"
+            }
+          },
+          {
+            "store": "honor_app_market",
+            "app_id": "荣耀商城APP",
+            "name": "荣耀商城APP",
+            "developer": "",
+            "package_name": "",
+            "category": "",
+            "url": "https://www.honor.com/cn/shop/appdownload?cid=132356",
+            "rating": null,
+            "rating_count": null,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 1,
+            "raw_metrics": {
+              "download_metric": "public_page_best_effort"
+            }
+          },
+          {
+            "store": "apple_app_store",
+            "app_id": "414478124",
+            "name": "微信",
+            "developer": "Tencent Technology (Shenzhen) Company Limited",
+            "package_name": "com.tencent.xin",
+            "category": "Social Networking",
+            "url": "https://apps.apple.com/cn/app/%E5%BE%AE%E4%BF%A1/id414478124?uo=4",
+            "rating": 4.15564,
+            "rating_count": 7991566,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 2,
+            "raw_metrics": {
+              "download_metric": "not_public",
+              "country": "cn"
+            }
+          },
+          {
+            "store": "honor_app_market",
+            "app_id": "download",
+            "name": "荣耀商城APP",
+            "developer": "",
+            "package_name": "",
+            "category": "",
+            "url": "https://www.honor.com/cn/m/app/download?cid=132356",
+            "rating": null,
+            "rating_count": null,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 2,
+            "raw_metrics": {
+              "download_metric": "public_page_best_effort"
+            }
+          },
+          {
+            "store": "apple_app_store",
+            "app_id": "444934666",
+            "name": "QQ",
+            "developer": "Tencent Technology (Shenzhen) Company Limited",
+            "package_name": "com.tencent.mqq",
+            "category": "Social Networking",
+            "url": "https://apps.apple.com/cn/app/qq/id444934666?uo=4",
+            "rating": 3.91313,
+            "rating_count": 2271572,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 3,
+            "raw_metrics": {
+              "download_metric": "not_public",
+              "country": "cn"
+            }
+          },
+          {
+            "store": "apple_app_store",
+            "app_id": "1120536875",
+            "name": "贪吃蛇大作战®",
+            "developer": "Wuhan Weipai Network Technology Co., Ltd.",
+            "package_name": "com.wepie.snakegame",
+            "category": "Games",
+            "url": "https://apps.apple.com/cn/app/%E8%B4%AA%E5%90%83%E8%9B%87%E5%A4%A7%E4%BD%9C%E6%88%98/id1120536875?uo=4",
+            "rating": 4.51674,
+            "rating_count": 1943391,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 4,
+            "raw_metrics": {
+              "download_metric": "not_public",
+              "country": "cn"
+            }
+          },
+          {
+            "store": "apple_app_store",
+            "app_id": "389801252",
+            "name": "Instagram",
+            "developer": "Instagram, Inc.",
+            "package_name": "com.burbn.instagram",
+            "category": "Photo & Video",
+            "url": "https://apps.apple.com/cn/app/instagram/id389801252?uo=4",
+            "rating": 4.5564,
+            "rating_count": 1095381,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 5,
+            "raw_metrics": {
+              "download_metric": "not_public",
+              "country": "cn"
+            }
+          }
+        ],
+        "errors": [
+          "google_play: <urlopen error timed out>",
+          "oppo_app_market: HTTP Error 404: Not Found; HTTP Error 404: Not Found",
+          "vivo_app_store: HTTP Error 404: Not Found; HTTP Error 404: Not Found"
+        ]
+      },
+      "sender_id": "ou_7235838cb620d3a642e6a8e18dad08db",
+      "updated_at": 1781178111
+    }
+  },
+  "updated_at": 1781178111
 }

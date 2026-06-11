@@ -8,6 +8,11 @@ from autoreview.packaging.runner import (
     make_package_job,
     run_package_job,
 )
+from autoreview.packaging.packlist import (
+    require_single_package_channel,
+    resolve_packlist_package,
+    scan_packlist,
+)
 
 
 class PackagingRunnerTest(unittest.TestCase):
@@ -75,6 +80,38 @@ class PackagingRunnerTest(unittest.TestCase):
             with self.assertRaises(PackageError):
                 run_package_job(job, dry_run=True)
 
+    def test_scan_packlist_reads_channel_entries(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = self._make_project(Path(temp_dir))
+            self._write_text_packlist(project_dir)
+
+            entries = scan_packlist(project_dir)
+
+            self.assertEqual(len(entries), 2)
+            self.assertEqual(entries[0].channel, "xm1003")
+            self.assertEqual(entries[0].pkg_name, "com.pelbs.book1003")
+            self.assertEqual(entries[1].version_name, "3.1016.34.2")
+
+    def test_resolve_packlist_package_finds_matching_channel(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = self._make_project(Path(temp_dir))
+            self._write_text_packlist(project_dir)
+
+            matches = resolve_packlist_package(project_dir, "com.pelbs.book1016")
+            entry = require_single_package_channel(project_dir, "com.pelbs.book1016")
+
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(entry.channel, "xm1016")
+            self.assertEqual(entry.app_name, "四年级英语点读")
+
+    def test_require_single_package_channel_errors_when_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = self._make_project(Path(temp_dir))
+            self._write_text_packlist(project_dir)
+
+            with self.assertRaises(PackageError):
+                require_single_package_channel(project_dir, "com.pelbs.book43")
+
     @staticmethod
     def _make_project(base_dir: Path) -> Path:
         project_dir = base_dir / "android-project"
@@ -86,6 +123,20 @@ class PackagingRunnerTest(unittest.TestCase):
         (project_dir / "packlist.xls").write_bytes(b"xls")
         (project_dir / "jksconfig.txt").write_text("signing=value", encoding="utf-8")
         return project_dir
+
+    @staticmethod
+    def _write_text_packlist(project_dir: Path) -> None:
+        rows = [
+            ["h0"],
+            ["h1"],
+            ["h2"],
+            ["", "四年级英语上册", "xm1003", "wx", "com.pelbs.book1003", "", "", "64", "", "", "3.1003.34.2"],
+            ["", "四年级英语点读", "xm1016", "wx", "com.pelbs.book1016", "", "", "64", "", "", "3.1016.34.2"],
+        ]
+        project_dir.joinpath("packlist.xls").write_text(
+            "\n".join("\t".join(row) for row in rows),
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":

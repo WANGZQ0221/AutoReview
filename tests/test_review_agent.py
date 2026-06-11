@@ -314,6 +314,18 @@ class ReviewAgentTest(unittest.TestCase):
 
             self.assertIn("英语四级单词", response.text)
 
+    def test_market_search_rejects_punctuation_only_query(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: FakeMarketSearcher(),
+            )
+
+            response = agent.handle_message("chat-1", "搜索竞品：。", "user-1")
+
+            self.assertIn("请提供有效", response.text)
+            self.assertNotIn("应用商店竞品搜索：。", response.text)
+
     def test_semantic_market_search_understands_natural_language(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             agent = ReviewAgent(

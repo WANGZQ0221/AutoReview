@@ -19,6 +19,12 @@ from autoreview.packaging.runner import (
     make_package_job,
     run_package_job,
 )
+from autoreview.packaging.packlist import (
+    packlist_entries_to_dicts,
+    require_single_package_channel,
+    resolve_packlist_package,
+    scan_packlist,
+)
 from autoreview.feishu.long_connection import run_long_connection
 from autoreview.feishu.server import run_server
 
@@ -133,8 +139,11 @@ def build_parser() -> argparse.ArgumentParser:
     package_apk.add_argument(
         "--channels",
         nargs="+",
-        required=True,
         help="Product flavor/channel names to write into packconfig.txt.",
+    )
+    package_apk.add_argument(
+        "--pkg-name",
+        help="Resolve the product flavor/channel from packlist.xls by Android package name.",
     )
     package_apk.add_argument(
         "--script",
@@ -177,6 +186,31 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print packaging plans without running node/package.js.",
     )
+
+    scan_packlist_parser = subparsers.add_parser(
+        "scan-packlist",
+        help="List package/channel entries from an Android project's packlist.xls.",
+    )
+    scan_packlist_parser.add_argument(
+        "--project-dir",
+        required=True,
+        help="Android project directory containing packlist.xls.",
+    )
+    scan_packlist_parser.add_argument(
+        "--pkg-name",
+        help="Only show entries matching this Android package name.",
+    )
+
+    resolve_package = subparsers.add_parser(
+        "resolve-package",
+        help="Resolve an Android package name to packlist channel entries.",
+    )
+    resolve_package.add_argument(
+        "--project-dir",
+        required=True,
+        help="Android project directory containing packlist.xls.",
+    )
+    resolve_package.add_argument("--pkg-name", required=True, help="Android package name.")
 
     material = subparsers.add_parser("material", help="Upload files and update OPPO app materials.")
     material.add_argument(
@@ -243,6 +277,32 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "batch-package":
             output = _run_batch_package(args, logger)
             print(json.dumps({"ok": True, "result": output}, ensure_ascii=False, indent=2, default=str))
+            return 0
+
+        if args.command == "scan-packlist":
+            entries = (
+                resolve_packlist_package(args.project_dir, args.pkg_name)
+                if args.pkg_name
+                else scan_packlist(args.project_dir)
+            )
+            print(
+                json.dumps(
+                    {"ok": True, "result": packlist_entries_to_dicts(entries)},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+
+        if args.command == "resolve-package":
+            entries = resolve_packlist_package(args.project_dir, args.pkg_name)
+            print(
+                json.dumps(
+                    {"ok": True, "result": packlist_entries_to_dicts(entries)},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
             return 0
 
         if args.command == "analyze-rejection":
@@ -339,14 +399,29 @@ def _run_batch_submit(args: argparse.Namespace, logger) -> list[dict[str, Any]]:
 
 
 def _run_package_apk(args: argparse.Namespace, logger) -> dict[str, Any]:
+    channels = args.channels
+    resolved_entry = None
+    if args.pkg_name:
+        resolved_entry = require_single_package_channel(args.project_dir, args.pkg_name)
+        if channels and resolved_entry.channel not in channels:
+            raise PackageError(
+                f"--channels does not match packlist package {args.pkg_name}: "
+                f"expected {resolved_entry.channel}"
+            )
+        channels = [resolved_entry.channel]
+    if not channels:
+        raise PackageError("package-apk requires --channels or --pkg-name")
     job = make_package_job(
         project_dir=args.project_dir,
-        channels=args.channels,
+        channels=channels,
         script_path=args.script,
         node_command=args.node,
         skip_start=not args.run_start,
     )
-    return run_package_job(job, dry_run=args.dry_run, logger=logger)
+    result = run_package_job(job, dry_run=args.dry_run, logger=logger)
+    if resolved_entry:
+        result["resolved_package"] = resolved_entry.to_dict()
+    return result
 
 
 def _run_batch_package(args: argparse.Namespace, logger) -> list[dict[str, Any]]:

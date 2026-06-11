@@ -196,6 +196,12 @@ class ReviewAgent:
         query: str,
         sender_id: str | None = None,
     ) -> AgentResponse:
+        query = _clean_market_query(query)
+        if not query:
+            return AgentResponse(
+                "请提供有效的应用名或关键词，例如“搜索竞品：英语四级单词”。",
+                {"intent": "market_search", "missing": "query"},
+            )
         result = self._normalize_market_result(self._make_market_searcher().search_competitors(query, limit=8))
         self.state_store.update_session(
             session_id,
@@ -215,6 +221,12 @@ class ReviewAgent:
         query: str,
         sender_id: str | None = None,
     ) -> AgentResponse:
+        query = _clean_market_query(query)
+        if not query:
+            return AgentResponse(
+                "请提供有效的应用名或关键词，例如“记录竞品下载：英语四级单词”。",
+                {"intent": "market_download_snapshot", "missing": "query"},
+            )
         result = self._normalize_market_result(self._make_market_searcher().search_competitors(query, limit=8))
         snapshot = build_monthly_snapshot(query, result)
         session = self.state_store.get_session(session_id)
@@ -1215,8 +1227,22 @@ def _store_label(store: Any) -> str:
     labels = {
         "apple_app_store": "Apple App Store",
         "google_play": "Google Play",
+        "oppo_app_market": "OPPO 软件商店",
+        "xiaomi_app_store": "小米应用商店",
+        "vivo_app_store": "vivo 应用商店",
+        "huawei_appgallery": "华为 AppGallery",
+        "honor_app_market": "荣耀应用市场",
     }
     return labels.get(str(store or ""), str(store or "未知商店"))
+
+
+def _clean_market_query(value: Any) -> str:
+    text = str(value or "")
+    text = re.sub(r"[\s：:，,。！？?、；;“”\"'`~!@#$%^&*()\[\]{}<>|\\/]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not re.search(r"[\w\u4e00-\u9fff]", text):
+        return ""
+    return text
 
 
 def _format_market_metrics(app: JsonDict) -> str:

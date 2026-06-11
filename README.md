@@ -16,7 +16,7 @@ AutoReview 用于把 Android 应用的“打包、提交、查询、审核协作
 - OCR 与驳回分析：已支持图片 OCR，OPPO 驳回截图可自动分析，并生成整改清单。
 - 飞书配置编辑：已支持查看配置、暂存修改、确认保存、自动备份；密钥字段不展示、不允许通过飞书改。
 - 飞书上传材料绑定：已支持上传 APK、图标、截图、版权证明、ICP 证明并绑定到本地配置；当前主流程不依赖这个能力。
-- 应用商店竞品搜索与月度记录：已支持通过飞书搜索公开应用商店结果，并把竞品公开下载/评分指标按月份写入会话状态。
+- 应用商店竞品搜索与月度记录：已支持通过飞书搜索 Apple App Store、Google Play、OPPO 软件商店、小米应用商店、vivo 应用商店、华为 AppGallery、荣耀应用市场的公开页面，并把竞品公开下载/评分指标按月份写入会话状态。
 - 多渠道配置模板：已增加 OPPO、小米、荣耀、vivo、华为配置模板，字段结构统一。
 - 配置文件化：已取消环境变量读取，AutoReview 配置全部从 JSON 文件读取。
 
@@ -224,6 +224,31 @@ cd D:\development_sercer\AutoReview
 D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py package-apk `
   --project-dir D:\你的Android项目目录 `
   --channels book1400 book1401 `
+  --script D:\development_sercer\AutoReview\package.js `
+  --dry-run
+```
+
+也可以先扫描 `packlist.xls`，查看项目能打哪些包：
+
+```powershell
+D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py scan-packlist `
+  --project-dir D:\你的Android项目目录
+```
+
+按包名反查渠道：
+
+```powershell
+D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py resolve-package `
+  --project-dir D:\你的Android项目目录 `
+  --pkg-name com.pelbs.book1067
+```
+
+按包名自动解析渠道并打包，适合先用应用市场配置里的包名找对应渠道：
+
+```powershell
+D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py package-apk `
+  --project-dir D:\你的Android项目目录 `
+  --pkg-name com.pelbs.book1067 `
   --script D:\development_sercer\AutoReview\package.js `
   --dry-run
 ```
@@ -534,7 +559,7 @@ cd D:\development_sercer\AutoReview
 - 飞书下载图片/文件需要开放消息资源、图片资源、文件资源读取权限。
 - 会话状态保存在 `data/review_agent_state.json`。
 - 上传到飞书的原始文件会保存到 `data/feishu_uploads/`。
-- `记录竞品下载` 会在会话状态的 `market_download_snapshots` 中按 `YYYY-MM` 保存月度快照。多数商店不公开精确下载量；AutoReview 只记录公开可见的下载量文本、评分和评分数，不公开的字段会留空。
+- `记录竞品下载` 会在会话状态的 `market_download_snapshots` 中按 `YYYY-MM` 保存月度快照。多数商店不公开精确下载量，且公开搜索页结构可能变化；AutoReview 会尽力解析公开可见的下载量文本、评分和评分数，不公开或解析不到的字段会留空。
 
 ## 多渠道配置模板
 
