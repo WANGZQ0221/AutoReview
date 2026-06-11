@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "base_url": "https://api.openai.com/v1",
+  "api_key": "填写大模型 API Key；不开启可留空",
+  "model": "gpt-4.1-mini",
+  "timeout_seconds": 30,
+  "temperature": 0.2,
+  "max_tokens": 800
+}

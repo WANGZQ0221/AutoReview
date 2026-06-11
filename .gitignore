@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+logs/
+outputs/
+release/
+tmp/
+*.pth
+*.pt
+*.onnx
+
+# Project-local config files
+config/*.json
+!config/*.example.json

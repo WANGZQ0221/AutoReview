@@ -1,0 +1,74 @@
+{
+  "credentials": {
+    "client_id": "1095048931227670426",
+    "client_secret": "aebbda1272c0b5d3e3436341d735fc55accc05c6246719d0776f280684c742d0"
+  },
+  "feishu": {
+    "app_id": "cli_aa939092123a5cc4",
+    "app_secret": "5vXwxu3fvnqxMKd9zECfTfglpIWUSkiE",
+    "verification_token": "",
+    "encrypt_key": "",
+    "state_path": "../data/review_agent_state.json",
+    "image_analysis": {
+      "image2_url": "",
+      "ocr_url": "http://114.55.40.152:5000/ocr",
+      "ocr_api_key": "LKITESTsyyXxvO7qAqBHvsXiOuoRaSjTIMtYg9Q7J50=",
+      "timeout_seconds": 120
+    }
+  },
+  "oppo": {
+    "base_url": "https://oop-openapi-cn.heytapmobi.com",
+    "token_path": "/developer/v1/token",
+    "pre_upload_path": "/resource/v1/upload/get-upload-url",
+    "release_path": "/resource/v1/app/upd",
+    "update_material_path": "/resource/v1/app/updm",
+    "task_state_path": "/resource/v1/app/task-state",
+    "detail_path": "/resource/v1/app/info",
+    "timeout_seconds": 30,
+    "submit_timeout_seconds": 15
+  },
+  "polling": {
+    "task_interval_seconds": 30,
+    "task_timeout_seconds": 1800,
+    "review_interval_seconds": 600,
+    "review_timeout_seconds": 86400
+  },
+  "submission": {
+    "pkg_name": "com.pelbs.book1067",
+    "version_code": "64",
+    "version_name": "3.1067.34.2",
+    "last_rejection_reason": "",
+    "apk_url": {
+      "path": "../release/app-release.apk",
+      "cpu_code": 0
+    },
+    "app_name": "英语四级单词",
+    "second_category_id": "1",
+    "third_category_id": "101",
+    "summary": "一句话应用简介，按 OPPO 后台要求控制字数。",
+    "detail_desc": "应用详细介绍。",
+    "update_desc": "本次更新说明。",
+    "privacy_source_url": "https://example.com/privacy.html",
+    "icon_url": {
+      "path": "../assets/icon.png"
+    },
+    "pic_url": [
+      {
+        "path": "../assets/screenshot-1.png"
+      },
+      {
+        "path": "../assets/screenshot-2.png"
+      }
+    ],
+    "online_type": "1",
+    "test_desc": "测试账号、测试步骤或不需要登录的说明。",
+    "copyright_url": {
+      "path": "../assets/copyright.pdf"
+    },
+    "business_username": "张三",
+    "business_email": "developer@example.com",
+    "business_mobile": "13800000000",
+    "age_level": "3",
+    "adaptive_equipment": "1"
+  }
+}

@@ -1,0 +1,66 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="false" level="WARNING" enabled_by_default="false">
+      <option name="ignoredPackages">
+        <list>
+          <option value="annotated-doc" />
+          <option value="backoff" />
+          <option value="bcrypt" />
+          <option value="build" />
+          <option value="durationpy" />
+          <option value="filelock" />
+          <option value="flatbuffers" />
+          <option value="fsspec" />
+          <option value="googleapis-common-protos" />
+          <option value="grpcio" />
+          <option value="hf-xet" />
+          <option value="httptools" />
+          <option value="huggingface_hub" />
+          <option value="importlib_metadata" />
+          <option value="importlib_resources" />
+          <option value="jsonschema" />
+          <option value="jsonschema-specifications" />
+          <option value="kubernetes" />
+          <option value="markdown-it-py" />
+          <option value="mdurl" />
+          <option value="mmh3" />
+          <option value="mpmath" />
+          <option value="oauthlib" />
+          <option value="onnxruntime" />
+          <option value="opentelemetry-api" />
+          <option value="opentelemetry-exporter-otlp-proto-common" />
+          <option value="opentelemetry-exporter-otlp-proto-grpc" />
+          <option value="opentelemetry-proto" />
+          <option value="opentelemetry-sdk" />
+          <option value="opentelemetry-semantic-conventions" />
+          <option value="overrides" />
+          <option value="posthog" />
+          <option value="protobuf" />
+          <option value="pybase64" />
+          <option value="PyPika" />
+          <option value="pyproject_hooks" />
+          <option value="referencing" />
+          <option value="requests-oauthlib" />
+          <option value="rich" />
+          <option value="rpds-py" />
+          <option value="shellingham" />
+          <option value="sympy" />
+          <option value="tokenizers" />
+          <option value="typer" />
+          <option value="uvicorn" />
+          <option value="watchfiles" />
+          <option value="websocket-client" />
+          <option value="zipp" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyStubPackagesAdvertiser" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="djangorestframework" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>

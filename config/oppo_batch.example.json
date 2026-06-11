@@ -1,0 +1,27 @@
+{
+  "defaults": {
+    "config": "oppo_submission.json"
+  },
+  "items": [
+    {
+      "name": "英语四级单词",
+      "apk": "../release/app-release.apk",
+      "version_code": "10002",
+      "version_name": "1.0.2"
+    },
+    {
+      "name": "另一个应用",
+      "config": "oppo_submission_another_app.json",
+      "apk": "../release/another-app.apk",
+      "version_code": "20001",
+      "version_name": "2.0.1"
+    },
+    {
+      "name": "另一个应用",
+      "config": "oppo_submission_another_app.json",
+      "apk": "../release/another-app.apk",
+      "version_code": "20001",
+      "version_name": "2.0.1"
+    }
+  ]
+}

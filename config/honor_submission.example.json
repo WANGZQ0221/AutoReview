@@ -1,0 +1,85 @@
+{
+  "store": {
+    "name": "honor",
+    "display_name": "荣耀应用市场",
+    "developer_console_url": "https://developer.hihonor.com/",
+    "api_status": "pending_integration"
+  },
+  "credentials": {
+    "client_id": "填写荣耀开发者服务 client_id",
+    "client_secret": "填写荣耀开发者服务 client_secret"
+  },
+  "llm_config_path": "llm_config.json",
+  "honor": {
+    "token_base_url": "https://iam.developer.honor.com",
+    "token_path": "/auth/token",
+    "base_url": "https://appmarket-openapi-drcn.cloud.honor.com",
+    "app_id_path": "/openapi/v1/publish/get-app-id",
+    "detail_path": "/openapi/v1/publish/get-app-detail",
+    "upload_url_path": "/openapi/v1/publish/get-file-upload-url",
+    "upload_path": "/openapi/v1/publish/file-upload",
+    "upload_by_url_path": "/openapi/v1/publish/upload-by-url",
+    "update_app_info_path": "/openapi/v1/publish/update-app-info",
+    "update_language_info_path": "/openapi/v1/publish/update-language-info",
+    "update_file_info_path": "/openapi/v1/publish/update-file-info",
+    "release_path": "/openapi/v1/publish/submit-audit",
+    "task_state_path": "/openapi/v1/publish/get-audit-result",
+    "current_release_path": "/openapi/v1/publish/get-app-current-release",
+    "phased_release_path": "/openapi/v1/publish/get-phased-release-info",
+    "timeout_seconds": 30,
+    "submit_timeout_seconds": 15
+  },
+  "polling": {
+    "task_interval_seconds": 30,
+    "task_timeout_seconds": 1800,
+    "review_interval_seconds": 600,
+    "review_timeout_seconds": 86400
+  },
+  "submission": {
+    "app_id": "荣耀后台 APPID，可选；已有应用建议填写，例如 104551867",
+    "pkg_name": "com.example.app",
+    "version_code": "10001",
+    "version_name": "1.0.1",
+    "last_rejection_reason": "",
+    "apk_url": {
+      "path": "../release/app-release.apk",
+      "cpu_code": 0
+    },
+    "app_name": "示例应用",
+    "second_category_id": "1",
+    "third_category_id": "101",
+    "summary": "一句话应用简介，按渠道后台要求控制字数。",
+    "detail_desc": "应用详细介绍。",
+    "update_desc": "本次更新说明。",
+    "privacy_source_url": "https://example.com/privacy.html",
+    "icon_url": {
+      "path": "../assets/icon.png"
+    },
+    "pic_url": [
+      {
+        "path": "../assets/screenshot-1.png"
+      },
+      {
+        "path": "../assets/screenshot-2.png"
+      }
+    ],
+    "online_type": "1",
+    "test_desc": "测试账号、测试步骤或不需要登录的说明。",
+    "copyright_url": {
+      "path": "../assets/copyright.pdf"
+    },
+    "icp_url": {
+      "path": "../assets/icp-proof.png"
+    },
+    "special_url": [
+      {
+        "path": "../assets/special-certificate.png"
+      }
+    ],
+    "business_username": "张三",
+    "business_email": "developer@example.com",
+    "business_mobile": "13800000000",
+    "age_level": "3",
+    "adaptive_equipment": "1"
+  }
+}
