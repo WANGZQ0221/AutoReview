@@ -27,6 +27,7 @@ from autoreview.packaging.packlist import (
 )
 from autoreview.feishu.long_connection import run_long_connection
 from autoreview.feishu.server import run_server
+from autoreview.agent_app.server import run_agent_app_server
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -253,6 +254,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Feishu SDK log level.",
     )
 
+    agent_app = subparsers.add_parser(
+        "serve-agent-app",
+        help="Run HTTP endpoints for Feishu intelligent-agent applications.",
+    )
+    agent_app.add_argument("--host", default="0.0.0.0", help="Agent app server bind host.")
+    agent_app.add_argument("--port", type=int, default=8090, help="Agent app server bind port.")
+
     return parser
 
 
@@ -267,6 +275,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "serve-feishu-ws":
             run_long_connection(args.config, log_level=args.log_level)
+            return 0
+        if args.command == "serve-agent-app":
+            run_agent_app_server(args.config, host=args.host, port=args.port)
             return 0
 
         if args.command == "package-apk":

@@ -45,12 +45,14 @@ class AppMarketSearchResult:
     query: str
     apps: list[AppMarketListing]
     errors: list[str] = field(default_factory=list)
+    store_statuses: list[JsonDict] = field(default_factory=list)
 
     def to_dict(self) -> JsonDict:
         return {
             "query": self.query,
             "apps": [app.to_dict() for app in self.apps],
             "errors": list(self.errors),
+            "store_statuses": list(self.store_statuses),
         }
 
 
@@ -93,17 +95,29 @@ class AppMarketSearcher:
 
         apps: list[AppMarketListing] = []
         errors: list[str] = []
+        store_statuses: list[JsonDict] = []
         per_store_limit = max(limit, 1)
         wanted = {store.lower() for store in stores} if stores else None
         for provider in self.providers:
             if wanted and provider.name.lower() not in wanted:
                 continue
             try:
-                apps.extend(provider.search(clean_query, limit=per_store_limit))
+                provider_apps = provider.search(clean_query, limit=per_store_limit)
+                apps.extend(provider_apps)
+                store_statuses.append(_provider_status(provider, provider_apps))
             except Exception as exc:  # pragma: no cover - defensive around public sites
-                errors.append(f"{provider.name}: {exc}")
+                message = _short_error(exc)
+                errors.append(f"{provider.name}: {message}")
+                store_statuses.append(
+                    {
+                        "store": provider.name,
+                        "status": "failed",
+                        "result_count": 0,
+                        "message": message,
+                    }
+                )
         apps.sort(key=_listing_sort_key)
-        return AppMarketSearchResult(query=clean_query, apps=apps[:limit], errors=errors)
+        return AppMarketSearchResult(query=clean_query, apps=apps[:limit], errors=errors, store_statuses=store_statuses)
 
 
 class AppleAppStoreProvider:
@@ -230,6 +244,8 @@ class PublicHtmlAppStoreProvider:
         self.timeout_seconds = timeout_seconds
 
     def search(self, query: str, *, limit: int = 10) -> list[AppMarketListing]:
+        self.last_status = "no_match"
+        self.last_status_message = "未解析到匹配结果"
         errors: list[str] = []
         for template in self.search_url_templates:
             url = self._format_url(template, query)
@@ -240,7 +256,13 @@ class PublicHtmlAppStoreProvider:
                 continue
             apps = self._parse_search_page(text, query=query, search_url=url, limit=limit)
             if apps:
+                self.last_status = "ok"
+                self.last_status_message = ""
                 return apps
+        if errors and all(_is_public_page_not_found(error) for error in errors):
+            self.last_status = "skipped"
+            self.last_status_message = "公开搜索入口不可用，已跳过"
+            return []
         if errors:
             raise RuntimeError("; ".join(errors[:2]))
         return []
@@ -448,6 +470,7 @@ def build_monthly_snapshot(
         "query": (query or result_dict.get("query") or "").strip(),
         "apps": apps,
         "errors": list(result_dict.get("errors") or []),
+        "store_statuses": list(result_dict.get("store_statuses") or []),
     }
 
 
@@ -467,10 +490,41 @@ def _get_text(url: str, timeout_seconds: int) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
+def _is_public_page_not_found(error: str) -> bool:
+    return "HTTP Error 404" in str(error)
+
+
 def _listing_sort_key(app: AppMarketListing) -> tuple[int, int, int]:
     rating_count = app.rating_count if app.rating_count is not None else -1
     rank = app.rank if app.rank is not None else 9999
     return (rank, -rating_count, 0 if app.downloads is None else -app.downloads)
+
+
+def _provider_status(provider: AppStoreProvider, apps: list[AppMarketListing]) -> JsonDict:
+    status = str(getattr(provider, "last_status", "") or "")
+    message = str(getattr(provider, "last_status_message", "") or "")
+    if apps:
+        status = "ok"
+        message = ""
+    elif not status:
+        status = "no_match"
+        message = "未解析到匹配结果"
+    return {
+        "store": provider.name,
+        "status": status,
+        "result_count": len(apps),
+        "message": message,
+    }
+
+
+def _short_error(exc: Any) -> str:
+    text = str(exc or "").strip()
+    lowered = text.lower()
+    if "timed out" in lowered or "timeout" in lowered:
+        return "超时"
+    if _is_public_page_not_found(text):
+        return "公开搜索入口不可用，已跳过"
+    return text
 
 
 def _normalize_search_query(value: Any) -> str:
@@ -550,7 +604,18 @@ def _listing_matches_query(app: AppMarketListing, query: str) -> bool:
         "",
         f"{app.name}{app.developer}{app.category}{app.package_name}",
     ).lower()
-    return compact_query in haystack or any(char in haystack for char in compact_query if "\u4e00" <= char <= "\u9fff")
+    if compact_query in haystack:
+        return True
+    chinese_chars = [char for char in compact_query if "\u4e00" <= char <= "\u9fff"]
+    if not chinese_chars:
+        return False
+    chinese_query = "".join(chinese_chars)
+    if len(chinese_query) <= 2:
+        return all(char in haystack for char in chinese_query)
+    bigrams = [chinese_query[index : index + 2] for index in range(len(chinese_query) - 1)]
+    matched = sum(1 for bigram in bigrams if bigram in haystack)
+    required = 2 if len(bigrams) >= 3 else 1
+    return matched >= required
 
 
 def _iter_json_objects(value: Any):

@@ -136,6 +136,10 @@ class ReviewAgent:
                 )
             return self.search_competitors(session_id, query, sender_id=sender_id)
 
+        generic_search_query = self._extract_generic_app_search_query(clean_text)
+        if generic_search_query:
+            return self.search_competitors(session_id, generic_search_query, sender_id=sender_id)
+
         if clean_text.startswith(("记录竞品下载", "记录竞品月报", "月度记录竞品")):
             query = self._extract_market_query(clean_text, session_id)
             if not query:
@@ -166,8 +170,11 @@ class ReviewAgent:
             session = self.state_store.get_session(session_id)
             return AgentResponse(self._format_session(session), {"intent": "status", "session": session})
 
+        if self._looks_like_default_app_question(clean_text.lower()):
+            return self.describe_default_app(session_id)
+
         if clean_text.startswith("查询审核状态") or clean_text in {"审核状态", "OPPO状态", "oppo状态"}:
-            return self.query_oppo_status(clean_text)
+            return self.query_oppo_status(clean_text, session_id=session_id, sender_id=sender_id)
 
         if clean_text in {"提交检查", "校验配置", "检查提交"}:
             return self.check_submission(session_id)
@@ -197,6 +204,8 @@ class ReviewAgent:
         sender_id: str | None = None,
     ) -> AgentResponse:
         query = _clean_market_query(query)
+        if _is_contextual_app_reference(query):
+            query = _clean_market_query((self._default_app_info(session_id) or {}).get("app_name"))
         if not query:
             return AgentResponse(
                 "请提供有效的应用名或关键词，例如“搜索竞品：英语四级单词”。",
@@ -222,6 +231,8 @@ class ReviewAgent:
         sender_id: str | None = None,
     ) -> AgentResponse:
         query = _clean_market_query(query)
+        if _is_contextual_app_reference(query):
+            query = _clean_market_query((self._default_app_info(session_id) or {}).get("app_name"))
         if not query:
             return AgentResponse(
                 "请提供有效的应用名或关键词，例如“记录竞品下载：英语四级单词”。",
@@ -259,7 +270,28 @@ class ReviewAgent:
             {"intent": "clear_all_state"},
         )
 
-    def query_oppo_status(self, text: str) -> AgentResponse:
+    def describe_default_app(self, session_id: str) -> AgentResponse:
+        app_info = self._default_app_info(session_id)
+        if not app_info:
+            return AgentResponse(
+                "当前还没有默认应用。可以发送“记录应用：应用名 / 包名 / 版本号”，或先查询审核状态。",
+                {"intent": "describe_default_app", "missing": "app_info"},
+            )
+        return AgentResponse(
+            "当前默认应用：\n"
+            f"- 应用名：{app_info.get('app_name') or '未记录'}\n"
+            f"- 包名：{app_info.get('pkg_name') or '未记录'}\n"
+            f"- 版本号：{app_info.get('version_code') or '未记录'}",
+            {"intent": "describe_default_app", "app_info": app_info},
+        )
+
+    def query_oppo_status(
+        self,
+        text: str,
+        *,
+        session_id: str | None = None,
+        sender_id: str | None = None,
+    ) -> AgentResponse:
         try:
             status = self._make_oppo_agent().status(self._extract_version_code(text))
         except OppoError as exc:
@@ -267,6 +299,8 @@ class ReviewAgent:
                 f"查询 OPPO 审核状态失败：{exc}",
                 {"intent": "oppo_status", "error": str(exc)},
             )
+        if session_id:
+            self._remember_status_app_info(session_id, status, sender_id=sender_id)
         return AgentResponse(
             self._format_oppo_status(status),
             {"intent": "oppo_status", "status": status},
@@ -483,7 +517,7 @@ class ReviewAgent:
             return self.clear_session_state(session_id)
 
         if self._looks_like_oppo_status_request(lowered):
-            return self.query_oppo_status(text)
+            return self.query_oppo_status(text, session_id=session_id, sender_id=sender_id)
 
         if self._looks_like_submission_check_request(lowered):
             return self.check_submission(session_id)
@@ -672,7 +706,11 @@ class ReviewAgent:
             return self.build_remediation_checklist(session_id, sender_id=sender_id)
         if intent == "oppo_status":
             version_code = str(decision.get("version_code") or "").strip()
-            return self.query_oppo_status(f"查询审核状态：{version_code}" if version_code else text)
+            return self.query_oppo_status(
+                f"查询审核状态：{version_code}" if version_code else text,
+                session_id=session_id,
+                sender_id=sender_id,
+            )
         if intent == "submission_check":
             return self.check_submission(session_id)
         if intent == "submit_checklist":
@@ -759,6 +797,53 @@ class ReviewAgent:
             return self.market_searcher_factory()
         return AppMarketSearcher()
 
+    def _remember_status_app_info(
+        self,
+        session_id: str,
+        status: JsonDict,
+        *,
+        sender_id: str | None = None,
+    ) -> None:
+        app_info = status.get("app_info") or {}
+        remembered = {
+            "app_name": str(app_info.get("app_name") or app_info.get("name") or ""),
+            "pkg_name": str(status.get("pkg_name") or app_info.get("pkg_name") or app_info.get("package_name") or ""),
+            "version_code": str(status.get("version_code") or app_info.get("version_code") or ""),
+        }
+        if not remembered["app_name"]:
+            config_app = self._config_app_info()
+            if remembered["pkg_name"] and remembered["pkg_name"] == config_app.get("pkg_name"):
+                remembered["app_name"] = str(config_app.get("app_name") or "")
+        self.state_store.update_session(
+            session_id,
+            {
+                "app_info": remembered,
+                "last_oppo_status": status,
+                "sender_id": sender_id,
+            },
+        )
+
+    def _default_app_info(self, session_id: str) -> JsonDict:
+        session = self.state_store.get_session(session_id)
+        app_info = session.get("app_info") or {}
+        if any(app_info.get(key) for key in ("app_name", "pkg_name", "version_code")):
+            return dict(app_info)
+        return self._config_app_info()
+
+    def _config_app_info(self) -> JsonDict:
+        if not self.oppo_config_path:
+            return {}
+        try:
+            config = OppoSubmissionConfig.from_file(self.oppo_config_path)
+        except Exception:
+            return {}
+        submission = config.submission or {}
+        return {
+            "app_name": str(submission.get("app_name") or ""),
+            "pkg_name": str(submission.get("pkg_name") or "").strip(),
+            "version_code": str(submission.get("version_code") or ""),
+        }
+
     def analyze_rejection_text(
         self,
         session_id: str,
@@ -799,6 +884,17 @@ class ReviewAgent:
         return str(analysis.get("similar_app") or app_info.get("app_name") or "").strip()
 
     @staticmethod
+    def _extract_generic_app_search_query(text: str) -> str:
+        clean = (text or "").strip()
+        if not clean.startswith(("搜索", "查找")):
+            return ""
+        if clean.startswith(("搜索竞品", "搜索应用商店", "查找竞品")):
+            return ""
+        query = re.sub(r"^(搜索|查找)(应用|app|APP)?", "", clean).strip()
+        query = re.sub(r"^[：:，,。！？?\s]+", "", query).strip()
+        return _clean_market_query(query)
+
+    @staticmethod
     def _contains_any(text: str, terms: tuple[str, ...]) -> bool:
         return any(term in text for term in terms)
 
@@ -819,6 +915,12 @@ class ReviewAgent:
 
     def _looks_like_session_status_request(self, text: str) -> bool:
         return self._contains_any(text, ("当前状态", "现在状态", "会话状态", "进度", "记录了什么", "现在到哪"))
+
+    def _looks_like_default_app_question(self, text: str) -> bool:
+        return self._contains_any(text, ("默认应用", "当前应用", "这个应用")) and self._contains_any(
+            text,
+            ("是什么", "哪个", "是谁", "什么", "现在"),
+        )
 
     def _looks_like_oppo_status_request(self, text: str) -> bool:
         return self._contains_any(text, ("审核状态", "审核进度", "oppo状态", "oppo 状态", "查审核", "查询审核"))
@@ -879,7 +981,7 @@ class ReviewAgent:
 
     def _parse_market_semantic_intent(self, text: str, session_id: str) -> tuple[str, str] | None:
         lowered = text.lower()
-        market_terms = ("竞品", "对标", "同类", "同类型", "类似", "应用商店", "app", "软件")
+        market_terms = ("竞品", "对标", "同类", "同类型", "类似", "应用商店", "应用", "app", "软件")
         search_terms = ("找", "搜索", "查", "看看", "有哪些", "分析", "调研", "研究")
         record_terms = ("记录", "保存", "月度", "每月", "月报", "下载量", "下载数据", "指标")
         has_market_context = any(term in lowered for term in market_terms)
@@ -905,13 +1007,13 @@ class ReviewAgent:
         clean = re.sub(r"(应用商店|各大应用市场|应用市场|市场|APP|app|应用|软件)", "", clean)
         clean = re.sub(r"(竞品|对标产品|对标|同类型|同类|类似|相似)", "", clean)
         clean = re.sub(r"(下载数据|下载量|下载|月度|每月|月报|指标|数据)", "", clean)
-        clean = re.sub(r"(关于|相关|方面|的)", "", clean)
+        clean = re.sub(r"(这个|该|当前|默认|它|关于|相关|方面|的)", "", clean)
         clean = re.sub(r"[：:，,。！？?\s]+", " ", clean).strip()
         if clean:
             return clean
         session = self.state_store.get_session(session_id)
         analysis = session.get("last_rejection_analysis") or {}
-        app_info = session.get("app_info") or {}
+        app_info = self._default_app_info(session_id)
         return str(analysis.get("similar_app") or app_info.get("app_name") or "").strip()
 
     @staticmethod
@@ -1148,6 +1250,7 @@ class ReviewAgent:
                 query=str(result.get("query") or ""),
                 apps=apps,
                 errors=[str(item) for item in result.get("errors") or []],
+                store_statuses=[dict(item) for item in result.get("store_statuses") or [] if isinstance(item, dict)],
             )
         return AppMarketSearchResult(query="", apps=[], errors=["unsupported market search result"])
 
@@ -1161,6 +1264,9 @@ class ReviewAgent:
             developer = f" / {app.developer}" if app.developer else ""
             category = f" / {app.category}" if app.category else ""
             lines.append(f"- [{_store_label(app.store)}] {app.name}{developer}{category}：{metrics}")
+        if result.store_statuses:
+            lines.append("已查询：")
+            lines.extend(_format_store_status(item) for item in result.store_statuses)
         if result.errors:
             lines.append("部分商店查询失败：" + "；".join(result.errors[:3]))
         lines.append("提示：发送“记录竞品下载：同一关键词”可把本月公开指标写入状态。")
@@ -1177,6 +1283,9 @@ class ReviewAgent:
                 f"- [{_store_label(app.get('store'))}] {app.get('name') or app.get('app_id')}: "
                 f"{_format_market_metrics(app)}"
             )
+        if snapshot.get("store_statuses"):
+            lines.append("已查询：")
+            lines.extend(_format_store_status(item) for item in snapshot["store_statuses"])
         if snapshot.get("errors"):
             lines.append("部分商店查询失败：" + "；".join(str(item) for item in snapshot["errors"][:3]))
         lines.append("说明：下载量只记录商店公开披露的数据；不公开精确下载量的商店会留空。")
@@ -1245,6 +1354,11 @@ def _clean_market_query(value: Any) -> str:
     return text
 
 
+def _is_contextual_app_reference(value: Any) -> bool:
+    text = _clean_market_query(value)
+    return text in {"这个", "这个应用", "当前", "当前应用", "默认", "默认应用", "它", "该应用"}
+
+
 def _format_market_metrics(app: JsonDict) -> str:
     downloads_text = str(app.get("downloads_text") or "").strip()
     downloads = app.get("downloads")
@@ -1260,6 +1374,20 @@ def _format_market_metrics(app: JsonDict) -> str:
         return download_part
     count_part = f"，{rating_count} 条评分" if rating_count is not None else ""
     return f"{download_part}，评分 {rating}{count_part}"
+
+
+def _format_store_status(status: JsonDict) -> str:
+    store = _store_label(status.get("store"))
+    result_count = int(status.get("result_count") or 0)
+    state = str(status.get("status") or "")
+    message = str(status.get("message") or "").strip()
+    if state == "ok":
+        return f"- {store}：{result_count} 个结果"
+    if state == "skipped":
+        return f"- {store}：{message or '已跳过'}"
+    if state == "failed":
+        return f"- {store}：{message or '查询失败'}"
+    return f"- {store}：{message or '未解析到匹配结果'}"
 
 
 def _optional_confidence(value: Any) -> float | None:

@@ -21,6 +21,7 @@ class FeishuConfig:
     ocr_api_key: str = ""
     image_analysis_timeout_seconds: int = 120
     llm: dict[str, Any] | None = None
+    agent_app_api_key: str = ""
 
     @classmethod
     def from_file(cls, path: str | Path) -> "FeishuConfig":
@@ -32,6 +33,7 @@ class FeishuConfig:
         if not resolved_state_path.is_absolute():
             resolved_state_path = config_path.parent / resolved_state_path
         image_analysis = feishu.get("image_analysis") or {}
+        agent_app = raw.get("agent_app") or feishu.get("agent_app") or {}
         llm = _load_llm_config(raw, feishu, config_path)
         return cls(
             app_id=str(feishu.get("app_id", "")),
@@ -61,6 +63,7 @@ class FeishuConfig:
                 or 120
             ),
             llm=llm,
+            agent_app_api_key=str(agent_app.get("api_key") or feishu.get("agent_app_api_key") or ""),
         )
 
 

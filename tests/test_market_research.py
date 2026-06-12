@@ -1,17 +1,28 @@
 import unittest
+from unittest.mock import patch
 
 from autoreview.market.research import (
     AppMarketSearcher,
     OppoAppMarketProvider,
     PublicHtmlAppStoreProvider,
+    _listing_matches_query,
     _parse_download_count,
 )
+from autoreview.market import AppMarketListing
 
 
 class FakeDomesticProvider(PublicHtmlAppStoreProvider):
     name = "fake_domestic"
     search_url_templates = ("https://store.example/search?q={query_plus}",)
     detail_url_patterns = (r"store\.example/app",)
+
+
+class TimeoutProvider(PublicHtmlAppStoreProvider):
+    name = "timeout_store"
+    search_url_templates = ("https://timeout.example/search?q={query_plus}",)
+
+    def search(self, query, *, limit=10):
+        raise TimeoutError("timed out")
 
 
 class MarketResearchTest(unittest.TestCase):
@@ -33,6 +44,25 @@ class MarketResearchTest(unittest.TestCase):
         self.assertEqual(result.query, "")
         self.assertEqual(result.apps, [])
         self.assertIn("empty query", result.errors)
+
+    def test_searcher_does_not_report_public_404_as_user_error(self):
+        searcher = AppMarketSearcher(providers=[FakeDomesticProvider()])
+
+        with patch("autoreview.market.research._get_text", side_effect=RuntimeError("HTTP Error 404: Not Found")):
+            result = searcher.search_competitors("王者荣耀")
+
+        self.assertEqual(result.apps, [])
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.store_statuses[0]["status"], "skipped")
+
+    def test_searcher_records_failed_store_status(self):
+        searcher = AppMarketSearcher(providers=[TimeoutProvider()])
+
+        result = searcher.search_competitors("王者荣耀")
+
+        self.assertEqual(result.store_statuses[0]["store"], "timeout_store")
+        self.assertEqual(result.store_statuses[0]["status"], "failed")
+        self.assertEqual(result.store_statuses[0]["message"], "超时")
 
     def test_public_html_provider_parses_json_ld_application(self):
         provider = FakeDomesticProvider()
@@ -101,6 +131,16 @@ class MarketResearchTest(unittest.TestCase):
         )
 
         self.assertEqual(apps, [])
+
+    def test_chinese_query_matching_requires_stronger_phrase_match(self):
+        self.assertEqual(
+            _listing_matches_query(AppMarketListing("honor_app_market", "1", "荣耀商城APP"), "王者荣耀"),
+            False,
+        )
+        self.assertEqual(
+            _listing_matches_query(AppMarketListing("xiaomi_app_store", "2", "王者荣耀-S43赛季陌上相逢"), "王者荣耀"),
+            True,
+        )
 
     def test_chinese_download_count_parser(self):
         self.assertEqual(_parse_download_count("123万次下载"), 1230000)

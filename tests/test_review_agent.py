@@ -234,6 +234,23 @@ class ReviewAgentTest(unittest.TestCase):
         self.assertIn("审核不通过", response.text)
         self.assertIn("资质缺失", response.text)
 
+    def test_query_oppo_status_remembers_app_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self._write_minimal_config(Path(temp_dir))
+            fake_agent = FakeOppoWorkflowAgent()
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                oppo_config_path=config_path,
+                oppo_agent_factory=lambda: fake_agent,
+            )
+
+            agent.handle_message("chat-1", "查询审核状态：200", "user-1")
+            session = agent.state_store.get_session("chat-1")
+
+            self.assertEqual(session["app_info"]["app_name"], "示例应用")
+            self.assertEqual(session["app_info"]["pkg_name"], "com.example.app")
+            self.assertEqual(session["app_info"]["version_code"], "200")
+
     def test_remediation_checklist_writes_state(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"))
@@ -284,6 +301,43 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertEqual(session["last_market_search"]["query"], "英语四级单词")
             self.assertIn("最近竞品搜索", status)
 
+    def test_market_search_formats_store_status_summary(self):
+        class StatusMarketSearcher:
+            def search_competitors(self, query, limit=8):
+                return AppMarketSearchResult(
+                    query=query,
+                    apps=[
+                        AppMarketListing(
+                            store="apple_app_store",
+                            app_id="1",
+                            name="王者荣耀",
+                        )
+                    ],
+                    errors=["google_play: 超时"],
+                    store_statuses=[
+                        {"store": "apple_app_store", "status": "ok", "result_count": 8},
+                        {"store": "xiaomi_app_store", "status": "ok", "result_count": 1},
+                        {"store": "huawei_appgallery", "status": "no_match", "result_count": 0, "message": "未解析到匹配结果"},
+                        {"store": "oppo_app_market", "status": "skipped", "result_count": 0, "message": "公开搜索入口不可用，已跳过"},
+                        {"store": "google_play", "status": "failed", "result_count": 0, "message": "超时"},
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: StatusMarketSearcher(),
+            )
+
+            response = agent.handle_message("chat-1", "搜索应用：王者荣耀", "user-1")
+
+            self.assertIn("已查询：", response.text)
+            self.assertIn("- Apple App Store：8 个结果", response.text)
+            self.assertIn("- 小米应用商店：1 个结果", response.text)
+            self.assertIn("- 华为 AppGallery：未解析到匹配结果", response.text)
+            self.assertIn("- OPPO 软件商店：公开搜索入口不可用，已跳过", response.text)
+            self.assertIn("- Google Play：超时", response.text)
+
     def test_competitor_download_snapshot_is_grouped_by_month(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             agent = ReviewAgent(
@@ -325,6 +379,48 @@ class ReviewAgentTest(unittest.TestCase):
 
             self.assertIn("请提供有效", response.text)
             self.assertNotIn("应用商店竞品搜索：。", response.text)
+
+    def test_generic_search_phrase_uses_market_search_without_llm(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            llm = FakeLlmClient({"intent": "chat", "confidence": 1, "reply": "should not be used"})
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: FakeMarketSearcher(),
+                llm_client=llm,
+            )
+
+            response = agent.handle_message("chat-1", "搜索，王者荣耀", "user-1")
+
+            self.assertIn("应用商店竞品搜索：王者荣耀", response.text)
+            self.assertEqual(llm.calls, [])
+
+    def test_default_app_question_reads_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self._write_minimal_config(Path(temp_dir))
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                oppo_config_path=config_path,
+            )
+
+            response = agent.handle_message("chat-1", "现在的默认应用是什么？")
+
+            self.assertIn("当前默认应用", response.text)
+            self.assertIn("示例应用", response.text)
+            self.assertIn("com.example.app", response.text)
+
+    def test_contextual_market_query_uses_default_app(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self._write_minimal_config(Path(temp_dir))
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                oppo_config_path=config_path,
+                market_searcher_factory=lambda: FakeMarketSearcher(),
+            )
+
+            response = agent.handle_message("chat-1", "找一下这个应用相似的应用。", "user-1")
+
+            self.assertIn("应用商店竞品搜索：示例应用", response.text)
+            self.assertNotIn("应用商店竞品搜索：这个", response.text)
 
     def test_semantic_market_search_understands_natural_language(self):
         with tempfile.TemporaryDirectory() as temp_dir:

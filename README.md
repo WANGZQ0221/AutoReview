@@ -315,6 +315,82 @@ D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo
 
 飞书入口是协作辅助，不是当前最短提交路径的必需项。
 
+## 飞书智能体应用
+
+智能体应用建议只作为飞书里的产品化入口，核心逻辑仍然放在 AutoReview 后端。这样以后修改打包、OCR、审核分析、提交策略时，只改 AutoReview 代码即可。
+
+推荐结构：
+
+```text
+飞书智能体应用
+  -> AutoReview HTTP 工具接口
+  -> ReviewAgent / 打包 / OCR / OPPO 提交
+```
+
+启动智能体应用 HTTP 服务：
+
+```powershell
+cd D:\development_sercer\AutoReview
+D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json serve-agent-app --host 0.0.0.0 --port 8090
+```
+
+健康检查：
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8090/health" -Method Get
+```
+
+查看可配置给飞书智能体的工具说明：
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8090/api/agent/tools" -Method Get |
+  ConvertTo-Json -Depth 20
+```
+
+通用消息工具：
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8090/api/agent/message" `
+  -Method Post `
+  -ContentType "application/json; charset=utf-8" `
+  -Body (@{
+    session_id = "feishu-agent-user-1"
+    text = "提交检查"
+  } | ConvertTo-Json -Depth 10)
+```
+
+驳回分析工具：
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8090/api/agent/analyze-rejection" `
+  -Method Post `
+  -ContentType "application/json; charset=utf-8" `
+  -Body (@{
+    session_id = "feishu-agent-user-1"
+    text = "APK相似度0.92，请勿重复提交，请补充ICP备案网站"
+  } | ConvertTo-Json -Depth 10)
+```
+
+如果要加接口鉴权，在配置里增加：
+
+```json
+{
+  "agent_app": {
+    "api_key": "填写一个长随机字符串"
+  }
+}
+```
+
+调用时带上：
+
+```powershell
+-Headers @{ Authorization = "Bearer 填写一个长随机字符串" }
+```
+
+如果智能体应用部署在飞书云端，AutoReview 需要提供公网 HTTPS 地址；如果只在内网测试，可以用内网网关或临时隧道把 `8090` 暴露出去。原来的长连接机器人可以继续保留，用于测试和兜底。
+
 ### 启动 / 停止飞书长连接
 
 进入项目目录后启动：
@@ -559,7 +635,8 @@ cd D:\development_sercer\AutoReview
 - 飞书下载图片/文件需要开放消息资源、图片资源、文件资源读取权限。
 - 会话状态保存在 `data/review_agent_state.json`。
 - 上传到飞书的原始文件会保存到 `data/feishu_uploads/`。
-- `记录竞品下载` 会在会话状态的 `market_download_snapshots` 中按 `YYYY-MM` 保存月度快照。多数商店不公开精确下载量，且公开搜索页结构可能变化；AutoReview 会尽力解析公开可见的下载量文本、评分和评分数，不公开或解析不到的字段会留空。
+- `记录竞品下载` 会在会话状态的 `market_download_snapshots` 中按 `YYYY-MM` 保存月度快照。多数商店不公开精确下载量，且公开搜索页结构可能变化；AutoReview 会尽力解析公开可见的下载量文本、评分和评分数，不公开或解析不到的字段会留空。OPPO / vivo 等公开搜索入口不可用时会自动跳过，不再把 404 暴露给飞书用户。
+- 竞品搜索回复会包含“已查询”概况，说明每个商店是返回了多少结果、未解析到匹配结果、公开入口不可用跳过，还是查询超时/失败。
 
 ## 多渠道配置模板
 
