@@ -100,6 +100,10 @@ class ReviewAgent:
         if capability_response:
             return capability_response
 
+        research_response = self._handle_app_store_data_platform_research(clean_text)
+        if research_response:
+            return research_response
+
         if clean_text in {"清空记录", "清空当前记录", "清空当前状态", "重置记录", "重置当前记录", "重置当前会话"}:
             return self.clear_session_state(session_id)
 
