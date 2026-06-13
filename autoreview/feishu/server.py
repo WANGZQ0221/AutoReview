@@ -19,6 +19,7 @@ from .image_analysis import ImageAnalysisClient, extract_ocr_text, format_image_
 
 
 JsonDict = dict[str, Any]
+BOT_MENTION_NAMES = ("提交助手", "AutoReview", "autoreview")
 
 
 class FeishuWebhookApp:
@@ -47,6 +48,9 @@ class FeishuWebhookApp:
         return self.handle_message_event(event)
 
     def handle_message_event(self, event: JsonDict) -> JsonDict:
+        if self._should_ignore_group_message(event):
+            return {"code": 0, "message": "ignored: group message without bot mention"}
+
         if event.get("file_key") or event.get("message_type") == "file":
             return self.handle_file_event(event)
 
@@ -66,6 +70,11 @@ class FeishuWebhookApp:
             except FeishuApiError as exc:
                 return {"code": 1, "message": str(exc), "agent_response": response.text}
         return {"code": 0, "message": "ok", "agent_response": response.text}
+
+    def _should_ignore_group_message(self, event: JsonDict) -> bool:
+        if not _is_group_chat_event(event):
+            return False
+        return not _event_addresses_bot(event, app_id=self.config.app_id)
 
     def handle_image_event(self, event: JsonDict) -> JsonDict:
         message_id = event.get("message_id", "")
@@ -274,6 +283,36 @@ def _looks_like_oppo_rejection(text: str) -> bool:
         "马甲",
     )
     return any(marker in text for marker in markers)
+
+
+def _is_group_chat_event(event: JsonDict) -> bool:
+    chat_type = str(event.get("chat_type") or "").lower()
+    return chat_type in {"group", "chat"}
+
+
+def _event_addresses_bot(event: JsonDict, *, app_id: str = "") -> bool:
+    text = str(event.get("text") or "")
+    if _text_mentions_bot(text):
+        return True
+
+    content = event.get("content") if isinstance(event.get("content"), dict) else {}
+    mentions = event.get("mentions") or content.get("mentions") or []
+    if not isinstance(mentions, list):
+        return False
+    for mention in mentions:
+        if not isinstance(mention, dict):
+            continue
+        values = " ".join(str(value or "") for value in mention.values())
+        if app_id and app_id in values:
+            return True
+        if _text_mentions_bot(values):
+            return True
+    return False
+
+
+def _text_mentions_bot(text: str) -> bool:
+    clean = str(text or "")
+    return any(name in clean for name in BOT_MENTION_NAMES)
 
 
 def _shorten(value: Any, limit: int = 180) -> str:

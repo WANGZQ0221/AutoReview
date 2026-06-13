@@ -816,6 +816,65 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertTrue(Path(session["last_upload"]["path"]).exists())
             self.assertIn("绑定材料", fake_client.replies[0][1])
 
+    def test_group_text_without_bot_mention_is_ignored(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            app = FeishuWebhookApp(
+                FeishuConfig(
+                    app_id="cli_bot",
+                    app_secret="app-secret",
+                    config_path=config_path,
+                    state_path=base_dir / "state.json",
+                )
+            )
+            fake_client = FakeFeishuClient()
+            app.client = fake_client
+
+            response = app.handle_message_event(
+                {
+                    "message_id": "om_1",
+                    "chat_id": "chat-1",
+                    "chat_type": "group",
+                    "sender_id": "user-1",
+                    "message_type": "text",
+                    "text": "帮助",
+                }
+            )
+
+            self.assertEqual(response["message"], "ignored: group message without bot mention")
+            self.assertEqual(fake_client.replies, [])
+
+    def test_group_text_with_bot_mention_replies(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            app = FeishuWebhookApp(
+                FeishuConfig(
+                    app_id="cli_bot",
+                    app_secret="app-secret",
+                    config_path=config_path,
+                    state_path=base_dir / "state.json",
+                )
+            )
+            fake_client = FakeFeishuClient()
+            app.client = fake_client
+
+            response = app.handle_message_event(
+                {
+                    "message_id": "om_1",
+                    "chat_id": "chat-1",
+                    "chat_type": "group",
+                    "sender_id": "user-1",
+                    "message_type": "text",
+                    "text": "帮助@提交助手",
+                }
+            )
+
+            self.assertEqual(response["code"], 0)
+            self.assertEqual(len(fake_client.replies), 1)
+            self.assertIn("我可以协助", fake_client.replies[0][1])
+
     def test_feishu_config_ignores_environment_fallbacks(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "oppo_submission.json"

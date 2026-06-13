@@ -38,6 +38,7 @@ def extract_message_event(payload: JsonDict) -> JsonDict | None:
         return {
             "message_id": message.get("message_id", ""),
             "chat_id": message.get("chat_id", ""),
+            "chat_type": message.get("chat_type", ""),
             "sender_id": (
                 sender.get("sender_id", {}).get("open_id")
                 or sender.get("sender_id", {}).get("union_id")
@@ -45,6 +46,7 @@ def extract_message_event(payload: JsonDict) -> JsonDict | None:
             ),
             "message_type": message_type,
             "text": extract_text_content(content),
+            "mentions": message.get("mentions") or content_data.get("mentions") or [],
             "image_key": content_data.get("image_key") or "",
             "file_key": content_data.get("file_key") or "",
             "file_name": content_data.get("file_name") or content_data.get("name") or "",
@@ -59,9 +61,11 @@ def extract_message_event(payload: JsonDict) -> JsonDict | None:
         return {
             "message_id": event.get("message_id", ""),
             "chat_id": event.get("open_chat_id") or event.get("chat_id") or "",
+            "chat_type": event.get("chat_type") or "",
             "sender_id": event.get("open_id") or "",
             "message_type": message_type,
             "text": event.get("text") or extract_text_content(content),
+            "mentions": event.get("mentions") or content_data.get("mentions") or [],
             "image_key": event.get("image_key") or content_data.get("image_key") or "",
             "file_key": event.get("file_key") or content_data.get("file_key") or "",
             "file_name": event.get("file_name") or content_data.get("file_name") or content_data.get("name") or "",
