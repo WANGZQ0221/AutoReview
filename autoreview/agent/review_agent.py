@@ -77,10 +77,26 @@ class ReviewAgent:
         if not clean_text:
             return AgentResponse("我收到空消息了。发送“帮助”可以查看可用指令。", {})
 
+        llm_decision = self._interpret_with_llm(session_id, clean_text, sender_id=sender_id)
+        if self._should_apply_llm_before_rules(clean_text):
+            llm_response = self._response_from_llm_decision(
+                session_id,
+                clean_text,
+                llm_decision,
+                sender_id=sender_id,
+                allow_chat=False,
+            )
+            if llm_response:
+                return llm_response
+
         if clean_text in {"帮助", "help", "/help"}:
             return AgentResponse(HELP_TEXT, {"intent": "help"})
 
-        capability_response = self._answer_capability_question(clean_text)
+        preference_response = self._handle_market_store_preference(session_id, clean_text, sender_id=sender_id)
+        if preference_response:
+            return preference_response
+
+        capability_response = self._answer_capability_question(session_id, clean_text)
         if capability_response:
             return capability_response
 
@@ -193,7 +209,13 @@ class ReviewAgent:
         if semantic_response:
             return semantic_response
 
-        llm_response = self._handle_llm_fallback(session_id, clean_text, sender_id=sender_id)
+        llm_response = self._response_from_llm_decision(
+            session_id,
+            clean_text,
+            llm_decision,
+            sender_id=sender_id,
+            allow_chat=True,
+        )
         if llm_response:
             return llm_response
 
@@ -216,7 +238,7 @@ class ReviewAgent:
                 "请提供有效的应用名或关键词，例如“搜索竞品：英语四级单词”。",
                 {"intent": "market_search", "missing": "query"},
             )
-        result = self._normalize_market_result(self._make_market_searcher().search_competitors(query, limit=8))
+        result = self._normalize_market_result(self._search_markets(session_id, query, limit=8))
         self.state_store.update_session(
             session_id,
             {
@@ -243,7 +265,7 @@ class ReviewAgent:
                 "请提供有效的应用名或关键词，例如“记录竞品下载：英语四级单词”。",
                 {"intent": "market_download_snapshot", "missing": "query"},
             )
-        result = self._normalize_market_result(self._make_market_searcher().search_competitors(query, limit=8))
+        result = self._normalize_market_result(self._search_markets(session_id, query, limit=8))
         snapshot = build_monthly_snapshot(query, result)
         session = self.state_store.get_session(session_id)
         snapshots = dict(session.get("market_download_snapshots") or {})
@@ -614,39 +636,143 @@ class ReviewAgent:
 
         return None
 
-    def _handle_llm_fallback(
+    @staticmethod
+    def _should_apply_llm_before_rules(text: str) -> bool:
+        if text in {
+            "帮助",
+            "help",
+            "/help",
+            "清空记录",
+            "清空当前记录",
+            "清空当前状态",
+            "重置记录",
+            "重置当前记录",
+            "重置当前会话",
+            "清空所有记录",
+            "清空全部记录",
+            "重置所有记录",
+            "重置全部会话",
+            "状态",
+            "当前状态",
+            "整改清单",
+            "生成整改清单",
+            "待办清单",
+            "查看提交配置",
+            "查看配置",
+            "提交配置",
+            "确认保存配置",
+            "保存配置",
+            "确认配置",
+            "取消保存配置",
+            "取消配置修改",
+            "放弃配置修改",
+            "提交检查",
+            "校验配置",
+            "检查提交",
+            "准备提交",
+        }:
+            return False
+        return not text.startswith(
+            (
+                "分析驳回",
+                "设置提交配置",
+                "批量设置提交配置",
+                "绑定材料",
+                "搜索竞品",
+                "竞品搜索",
+                "搜索应用商店",
+                "找竞品",
+                "记录竞品下载",
+                "记录竞品月报",
+                "月度记录竞品",
+                "记录应用",
+                "查询审核状态",
+            )
+        )
+
+    def _interpret_with_llm(
         self,
         session_id: str,
         text: str,
         sender_id: str | None = None,
-    ) -> AgentResponse | None:
+    ) -> JsonDict | None:
         if not self.llm_client:
             return None
-        session = self.state_store.get_session(session_id)
         try:
-            decision = self.llm_client.interpret(text, session)
+            decision = self.llm_client.interpret(text, self._llm_context(session_id))
         except Exception as exc:
-            return AgentResponse(
-                f"我尝试调用大模型理解这句话，但失败了：{_shorten(exc)}",
-                {"intent": "llm_error", "error": str(exc)},
-            )
+            return {"intent": "llm_error", "error": str(exc)}
+        if not isinstance(decision, dict):
+            return {"intent": "llm_error", "error": "LLM decision must be a JSON object"}
         self._store_llm_memories(session_id, decision, sender_id=sender_id)
+        return decision
+
+    def _response_from_llm_decision(
+        self,
+        session_id: str,
+        text: str,
+        decision: JsonDict | None,
+        sender_id: str | None = None,
+        *,
+        allow_chat: bool,
+    ) -> AgentResponse | None:
+        if not decision:
+            return None
         intent = str(decision.get("intent") or "unknown").strip()
+        if intent == "llm_error":
+            if allow_chat:
+                return AgentResponse(
+                    f"我尝试调用大模型理解这句话，但失败了：{_shorten(decision.get('error'))}",
+                    {"intent": "llm_error", "error": str(decision.get("error") or "")},
+                )
+            return None
         confidence = _optional_confidence(decision.get("confidence"))
         if confidence is not None and confidence < 0.45:
-            reply = str(decision.get("reply") or "").strip()
-            return AgentResponse(
-                reply or "我不太确定你的意思。可以换个说法，或发送“帮助”查看可用能力。",
-                {"intent": "unknown", "llm": decision},
-            )
+            if allow_chat:
+                reply = str(decision.get("reply") or "").strip()
+                return AgentResponse(
+                    reply or "我不太确定你的意思。可以换个说法，或发送“帮助”查看可用能力。",
+                    {"intent": "unknown", "llm": decision},
+                )
+            return None
+        if intent in {"unknown", "disabled"}:
+            return None if not allow_chat else self._llm_reply_or_none(intent, decision)
+        if intent == "chat" and not allow_chat:
+            return None
+        if intent == "remember" and not allow_chat:
+            return None
         response = self._dispatch_llm_intent(session_id, text, decision, sender_id=sender_id)
         if response:
             response.data["llm"] = decision
             return response
+        return self._llm_reply_or_none(intent, decision) if allow_chat else None
+
+    @staticmethod
+    def _llm_reply_or_none(intent: str, decision: JsonDict) -> AgentResponse | None:
         reply = str(decision.get("reply") or "").strip()
-        if reply:
-            return AgentResponse(reply, {"intent": intent, "llm": decision})
-        return None
+        if not reply:
+            return None
+        return AgentResponse(reply, {"intent": intent, "llm": decision})
+
+    def _llm_context(self, session_id: str) -> JsonDict:
+        session = self.state_store.get_session(session_id)
+        return {
+            "session": session,
+            "default_config": {
+                "app_info": self._config_app_info(),
+                "image_analysis": {
+                    "ocr_configured": bool(self._configured_image_analysis_url("ocr_url")),
+                    "image2_configured": bool(self._configured_image_analysis_url("image2_url")),
+                },
+            },
+            "preferences": {
+                "market_stores": self._market_store_preferences(session_id),
+            },
+            "supported_market_stores": [
+                {"store": store, "label": label}
+                for store, label in SUPPORTED_MARKET_STORES
+            ],
+        }
 
     def _dispatch_llm_intent(
         self,
@@ -737,6 +863,24 @@ class ReviewAgent:
         if intent == "bind_material":
             label = str(decision.get("material_label") or self._extract_material_label(text)).strip()
             return self.bind_last_upload_as_material(session_id, label, sender_id=sender_id)
+        if intent == "market_store_preference":
+            disable = _normalize_store_list(decision.get("disable_stores") or decision.get("disabled_stores"))
+            enable = _normalize_store_list(decision.get("enable_stores") or decision.get("enabled_stores"))
+            if not disable and not enable:
+                parsed = self._parse_market_store_preference(text)
+                if parsed:
+                    disable, enable = parsed
+            if not disable and not enable:
+                return AgentResponse(
+                    "要调整哪个商店？例如“默认不查询 Google Play”或“恢复查询 Google Play”。",
+                    {"intent": intent, "missing": "store"},
+                )
+            return self._apply_market_store_preference(
+                session_id,
+                disable_stores=disable,
+                enable_stores=enable,
+                sender_id=sender_id,
+            )
         if intent in {"market_search", "market_download_snapshot"}:
             query = str(decision.get("query") or self._extract_market_semantic_query(text, session_id)).strip()
             if not query:
@@ -801,6 +945,91 @@ class ReviewAgent:
         if self.market_searcher_factory:
             return self.market_searcher_factory()
         return AppMarketSearcher()
+
+    def _search_markets(self, session_id: str, query: str, *, limit: int) -> Any:
+        stores = self._allowed_market_stores(session_id)
+        searcher = self._make_market_searcher()
+        if stores is None:
+            return searcher.search_competitors(query, limit=limit)
+        return searcher.search_competitors(query, limit=limit, stores=stores)
+
+    def _allowed_market_stores(self, session_id: str) -> set[str] | None:
+        preferences = self._market_store_preferences(session_id)
+        disabled = preferences.get("disabled_stores") or []
+        if not disabled:
+            return None
+        allowed = {store for store, _ in SUPPORTED_MARKET_STORES if store not in set(disabled)}
+        return allowed or set()
+
+    def _market_store_preferences(self, session_id: str) -> JsonDict:
+        session = self.state_store.get_session(session_id)
+        raw = session.get("market_store_preferences") or {}
+        disabled = []
+        for store in raw.get("disabled_stores") or []:
+            normalized = _normalize_store_name(store)
+            if normalized and normalized not in disabled:
+                disabled.append(normalized)
+        return {"disabled_stores": disabled}
+
+    def _handle_market_store_preference(
+        self,
+        session_id: str,
+        text: str,
+        sender_id: str | None = None,
+    ) -> AgentResponse | None:
+        parsed = self._parse_market_store_preference(text)
+        if not parsed:
+            return None
+        disable, enable = parsed
+        return self._apply_market_store_preference(
+            session_id,
+            disable_stores=disable,
+            enable_stores=enable,
+            sender_id=sender_id,
+        )
+
+    def _parse_market_store_preference(self, text: str) -> tuple[list[str], list[str]] | None:
+        store = _extract_market_store_name(text)
+        if not store:
+            return None
+        lowered = text.lower()
+        if not self._contains_any(lowered, ("默认", "以后", "后续", "每次", "查询", "搜索", "查")):
+            return None
+        disable = self._contains_any(lowered, ("不查询", "不要查", "别查", "不查", "排除", "跳过", "禁用", "去掉"))
+        enable = self._contains_any(lowered, ("恢复查询", "恢复查", "重新查询", "继续查询", "启用", "取消排除", "取消禁用"))
+        if not disable and not enable:
+            return None
+        return ([store] if disable else [], [store] if enable else [])
+
+    def _apply_market_store_preference(
+        self,
+        session_id: str,
+        *,
+        disable_stores: list[str],
+        enable_stores: list[str],
+        sender_id: str | None = None,
+    ) -> AgentResponse:
+        preferences = self._market_store_preferences(session_id)
+        disabled = set(preferences.get("disabled_stores") or [])
+        for store in disable_stores:
+            disabled.add(store)
+        for store in enable_stores:
+            disabled.discard(store)
+        updated = {"disabled_stores": sorted(disabled)}
+        self.state_store.update_session(
+            session_id,
+            {
+                "market_store_preferences": updated,
+                "sender_id": sender_id,
+            },
+        )
+        changed = disable_stores or enable_stores
+        action = "不查询" if disable_stores else "恢复查询"
+        labels = "、".join(_store_label(store) for store in changed)
+        return AgentResponse(
+            f"已记录当前会话偏好：默认{action}{labels}。这只影响当前飞书会话，不会修改默认配置文件。",
+            {"intent": "market_store_preference", "preferences": updated},
+        )
 
     def _remember_status_app_info(
         self,
@@ -879,7 +1108,7 @@ class ReviewAgent:
         clean = re.sub(r"\s+", " ", clean).strip()
         return clean
 
-    def _answer_capability_question(self, text: str) -> AgentResponse | None:
+    def _answer_capability_question(self, session_id: str, text: str) -> AgentResponse | None:
         lowered = text.lower()
         if not self._looks_like_capability_question(lowered):
             return None
@@ -901,9 +1130,15 @@ class ReviewAgent:
             return AgentResponse(text, {"intent": "capability_question", "capability": "ocr", "configured": bool(ocr_url)})
 
         if self._looks_like_market_store_scope_question(lowered):
+            preferences = self._market_store_preferences(session_id)
             return AgentResponse(
-                _format_supported_market_stores(),
-                {"intent": "capability_question", "capability": "market_store_scope", "configured": True},
+                _format_supported_market_stores(set(preferences.get("disabled_stores") or [])),
+                {
+                    "intent": "capability_question",
+                    "capability": "market_store_scope",
+                    "configured": True,
+                    "preferences": preferences,
+                },
             )
 
         if self._contains_any(lowered, ("竞品", "应用商店", "应用市场", "下载量")):
@@ -1194,6 +1429,9 @@ class ReviewAgent:
             )
         snapshots = session.get("market_download_snapshots") or {}
         snapshot_line = f"\n- 竞品月度记录：{len(snapshots)} 个月" if snapshots else ""
+        preferences = session.get("market_store_preferences") or {}
+        disabled_stores = [_store_label(store) for store in preferences.get("disabled_stores") or []]
+        preference_line = f"\n- 应用商店偏好：不查询 {'、'.join(disabled_stores)}" if disabled_stores else ""
         memory = session.get("agent_memory") or []
         memory_line = f"\n- 长期记忆：{len(memory)} 条" if memory else ""
         return (
@@ -1207,6 +1445,7 @@ class ReviewAgent:
             f"{remediation_line}"
             f"{market_line}"
             f"{snapshot_line}"
+            f"{preference_line}"
             f"{memory_line}"
         )
 
@@ -1420,31 +1659,70 @@ def _material_name(material_type: Any, index: Any = None) -> str:
     return labels.get(str(material_type), str(material_type or "未知"))
 
 
+SUPPORTED_MARKET_STORES = (
+    ("apple_app_store", "Apple App Store"),
+    ("google_play", "Google Play"),
+    ("oppo_app_market", "OPPO 软件商店"),
+    ("xiaomi_app_store", "小米应用商店"),
+    ("vivo_app_store", "vivo 应用商店"),
+    ("huawei_appgallery", "华为 AppGallery"),
+    ("honor_app_market", "荣耀应用市场"),
+)
+
+
 def _store_label(store: Any) -> str:
-    labels = {
-        "apple_app_store": "Apple App Store",
-        "google_play": "Google Play",
-        "oppo_app_market": "OPPO 软件商店",
-        "xiaomi_app_store": "小米应用商店",
-        "vivo_app_store": "vivo 应用商店",
-        "huawei_appgallery": "华为 AppGallery",
-        "honor_app_market": "荣耀应用市场",
-    }
+    labels = dict(SUPPORTED_MARKET_STORES)
     return labels.get(str(store or ""), str(store or "未知商店"))
 
 
-def _format_supported_market_stores() -> str:
-    return (
-        "目前竞品搜索会尝试查询这些应用商店：\n"
-        "- Apple App Store\n"
-        "- Google Play\n"
-        "- OPPO 软件商店\n"
-        "- 小米应用商店\n"
-        "- vivo 应用商店\n"
-        "- 华为 AppGallery\n"
-        "- 荣耀应用市场\n"
-        "说明：这些都是公开页面/公开接口查询，不同商店可见数据不同；OPPO、vivo、华为等入口可能因公开页面限制而跳过或拿不到结果。"
-    )
+def _format_supported_market_stores(disabled_stores: set[str] | None = None) -> str:
+    disabled = disabled_stores or set()
+    active = [(store, label) for store, label in SUPPORTED_MARKET_STORES if store not in disabled]
+    inactive = [(store, label) for store, label in SUPPORTED_MARKET_STORES if store in disabled]
+    lines = ["目前竞品搜索会尝试查询这些应用商店："]
+    lines.extend(f"- {label}" for _, label in active)
+    if inactive:
+        lines.append("当前会话已按你的偏好排除：")
+        lines.extend(f"- {label}" for _, label in inactive)
+    lines.append("说明：这些都是公开页面/公开接口查询，不同商店可见数据不同；OPPO、vivo、华为等入口可能因公开页面限制而跳过或拿不到结果。")
+    return "\n".join(lines)
+
+
+def _extract_market_store_name(text: str) -> str:
+    lowered = str(text or "").lower()
+    aliases = {
+        "apple_app_store": ("apple app store", "app store", "苹果", "ios"),
+        "google_play": ("google play", "google", "play商店", "谷歌"),
+        "oppo_app_market": ("oppo", "欢太", "heytap"),
+        "xiaomi_app_store": ("xiaomi", "小米"),
+        "vivo_app_store": ("vivo",),
+        "huawei_appgallery": ("huawei", "appgallery", "华为"),
+        "honor_app_market": ("honor", "荣耀"),
+    }
+    for store, names in aliases.items():
+        if any(name in lowered for name in names):
+            return store
+    return ""
+
+
+def _normalize_store_name(value: Any) -> str:
+    raw = str(value or "").strip()
+    known = {store for store, _ in SUPPORTED_MARKET_STORES}
+    if raw in known:
+        return raw
+    return _extract_market_store_name(raw)
+
+
+def _normalize_store_list(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    raw_items = value if isinstance(value, list) else [value]
+    stores = []
+    for item in raw_items:
+        store = _normalize_store_name(item)
+        if store and store not in stores:
+            stores.append(store)
+    return stores
 
 
 def _clean_market_query(value: Any) -> str:

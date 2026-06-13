@@ -380,7 +380,7 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("请提供有效", response.text)
             self.assertNotIn("应用商店竞品搜索：。", response.text)
 
-    def test_generic_search_phrase_uses_market_search_without_llm(self):
+    def test_generic_search_phrase_uses_market_search_after_llm_understands_message(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             llm = FakeLlmClient({"intent": "chat", "confidence": 1, "reply": "should not be used"})
             agent = ReviewAgent(
@@ -392,7 +392,7 @@ class ReviewAgentTest(unittest.TestCase):
             response = agent.handle_message("chat-1", "搜索，王者荣耀", "user-1")
 
             self.assertIn("应用商店竞品搜索：王者荣耀", response.text)
-            self.assertEqual(llm.calls, [])
+            self.assertEqual(len(llm.calls), 1)
 
     def test_default_app_question_reads_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -504,6 +504,63 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("OPPO 软件商店", response.text)
             self.assertIn("荣耀应用市场", response.text)
             self.assertNotIn("应用商店竞品搜索：目前可以", response.text)
+
+    def test_market_store_preference_is_session_only_and_affects_store_list(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            before = config_path.read_text(encoding="utf-8")
+            agent = ReviewAgent(
+                JsonStateStore(base_dir / "state.json"),
+                oppo_config_path=config_path,
+            )
+
+            preference = agent.handle_message("chat-1", "默认不查询Google Play @提交助手")
+            stores = agent.handle_message("chat-1", "目前可以查询那些厂家的应用商店？@提交助手")
+            status = agent.handle_message("chat-1", "状态").text
+            after = config_path.read_text(encoding="utf-8")
+
+            self.assertEqual(before, after)
+            self.assertEqual(preference.data["intent"], "market_store_preference")
+            self.assertIn("不会修改默认配置文件", preference.text)
+            self.assertIn("当前会话已按你的偏好排除", stores.text)
+            self.assertIn("- Google Play", stores.text)
+            self.assertIn("应用商店偏好：不查询 Google Play", status)
+
+    def test_market_store_preference_filters_actual_search(self):
+        class CapturingMarketSearcher:
+            def __init__(self):
+                self.calls = []
+
+            def search_competitors(self, query, limit=8, stores=None):
+                self.calls.append({"query": query, "limit": limit, "stores": stores})
+                return AppMarketSearchResult(
+                    query=query,
+                    apps=[
+                        AppMarketListing(
+                            store="apple_app_store",
+                            app_id="123456",
+                            name="英语单词竞品",
+                        )
+                    ],
+                    store_statuses=[
+                        {"store": "apple_app_store", "status": "ok", "result_count": 1},
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            searcher = CapturingMarketSearcher()
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: searcher,
+            )
+
+            agent.handle_message("chat-1", "默认不查询Google Play")
+            response = agent.handle_message("chat-1", "搜索竞品：英语四级单词")
+
+            self.assertIn("应用商店竞品搜索", response.text)
+            self.assertNotIn("google_play", searcher.calls[-1]["stores"])
+            self.assertIn("apple_app_store", searcher.calls[-1]["stores"])
 
     def test_image_capability_questions_use_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -684,7 +741,7 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("待保存配置修改", response.text)
             self.assertEqual(raw["submission"]["version_code"], "100")
 
-    def test_llm_is_not_called_when_rules_match(self):
+    def test_llm_is_called_when_rules_match_but_local_command_still_wins(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             llm = FakeLlmClient({"intent": "chat", "confidence": 1, "reply": "should not be used"})
             agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"), llm_client=llm)
@@ -692,7 +749,43 @@ class ReviewAgentTest(unittest.TestCase):
             response = agent.handle_message("chat-1", "状态")
 
             self.assertIn("当前会话", response.text)
-            self.assertEqual(llm.calls, [])
+            self.assertEqual(len(llm.calls), 1)
+
+    def test_llm_context_includes_default_config_and_preferences(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            llm = FakeLlmClient({"intent": "chat", "confidence": 1, "reply": "知道了。"})
+            agent = ReviewAgent(
+                JsonStateStore(base_dir / "state.json"),
+                oppo_config_path=config_path,
+                llm_client=llm,
+            )
+
+            agent.handle_message("chat-1", "默认不查询Google Play")
+            agent.handle_message("chat-1", "随便聊一句")
+            context = llm.calls[-1][1]
+
+            self.assertEqual(context["default_config"]["app_info"]["app_name"], "示例应用")
+            self.assertEqual(context["preferences"]["market_stores"]["disabled_stores"], ["google_play"])
+            self.assertIn({"store": "google_play", "label": "Google Play"}, context["supported_market_stores"])
+
+    def test_llm_can_dispatch_market_store_preference(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            llm = FakeLlmClient(
+                {
+                    "intent": "market_store_preference",
+                    "confidence": 0.92,
+                    "disable_stores": ["google_play"],
+                }
+            )
+            agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"), llm_client=llm)
+
+            response = agent.handle_message("chat-1", "后续海外的先别查了，Google Play 跳过")
+            status = agent.handle_message("chat-1", "状态").text
+
+            self.assertIn("默认不查询Google Play", response.text)
+            self.assertIn("应用商店偏好：不查询 Google Play", status)
 
     def test_view_submission_config_hides_secrets(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -118,9 +118,23 @@ def _extract_message_content(response: JsonDict) -> str:
 
 
 def _build_user_prompt(message: str, session: JsonDict) -> str:
+    session_context = session if isinstance(session, dict) else {}
+    if "session" in session_context:
+        compact_session = _compact_session(session_context.get("session") or {})
+        default_config = session_context.get("default_config") or {}
+        preferences = session_context.get("preferences") or {}
+        supported_market_stores = session_context.get("supported_market_stores") or []
+    else:
+        compact_session = _compact_session(session_context)
+        default_config = {}
+        preferences = {}
+        supported_market_stores = []
     context = {
         "message": message,
-        "session": _compact_session(session),
+        "session": compact_session,
+        "default_config": default_config,
+        "preferences": preferences,
+        "supported_market_stores": supported_market_stores,
     }
     return json.dumps(context, ensure_ascii=False)
 
@@ -129,6 +143,7 @@ def _compact_session(session: JsonDict) -> JsonDict:
     return {
         "app_info": session.get("app_info") or {},
         "agent_memory": session.get("agent_memory") or [],
+        "market_store_preferences": session.get("market_store_preferences") or {},
         "last_rejection_analysis": session.get("last_rejection_analysis") or {},
         "last_market_search": session.get("last_market_search") or {},
         "pending_config_patch": session.get("pending_config_patch") or {},
@@ -164,6 +179,7 @@ _SYSTEM_PROMPT = """你是 AutoReview 的飞书协作 agent，项目目标是自
 - confirm_config_update：确认保存配置修改。
 - cancel_config_update：取消配置修改。
 - bind_material：绑定最近上传材料。
+- market_store_preference：调整当前会话的应用商店查询偏好，例如默认不查 Google Play、恢复查询 Google Play。
 - market_search：搜索竞品。
 - market_download_snapshot：记录本月竞品下载数据。
 - unknown：确实无法判断。
@@ -177,6 +193,8 @@ _SYSTEM_PROMPT = """你是 AutoReview 的飞书协作 agent，项目目标是自
   "version_code": "审核状态版本号，可空",
   "config_assignment": "例如 submission.version_code=10002，可空",
   "material_label": "APK/图标/截图1/版权证明/ICP证明，可空",
+  "disable_stores": ["要在当前会话排除的商店 id，例如 google_play"],
+  "enable_stores": ["要在当前会话恢复查询的商店 id，例如 google_play"],
   "app_info": {"app_name":"","pkg_name":"","version_code":""},
   "memories": ["需要长期记住的事实或偏好"],
   "reply": "chat/unknown 时给用户的简短中文回复"
@@ -186,5 +204,8 @@ _SYSTEM_PROMPT = """你是 AutoReview 的飞书协作 agent，项目目标是自
 - 不要执行提交、上传、保存配置等动作，只输出意图。
 - 配置修改必须提取为 config_assignment，不要直接声称已保存。
 - 用户要求最终提交/上架时，优先识别为 submission_check 或 submit_checklist，让本地工具先检查。
+- 用户要求“默认不查/以后不查/恢复查询某应用商店”时，识别为 market_store_preference，并使用 supported_market_stores 里的 store id。
+- 生成 market_search 或 market_download_snapshot 时，要结合 preferences.market_stores，不要建议查询当前会话已排除的商店。
+- 回答和命令判断要参考 default_config 和 session；不要把用户偏好写入默认配置。
 - 如果缺关键信息，intent 可保持目标意图，同时 reply 提示补充。
 """
