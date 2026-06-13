@@ -457,6 +457,50 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("我可以协助", help_response.text)
             self.assertIn("当前会话", status_response.text)
 
+    def test_strips_feishu_bot_mentions_before_intent_matching(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"))
+
+            response = agent.handle_message("chat-1", "帮助@提交助手")
+
+            self.assertEqual(response.data["intent"], "help")
+            self.assertIn("我可以协助", response.text)
+
+    def test_capability_questions_do_not_trigger_market_search(self):
+        class RaisingMarketSearcher:
+            def search_competitors(self, query, limit=8):
+                raise AssertionError("capability question should not run market search")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: RaisingMarketSearcher(),
+            )
+
+            response = agent.handle_message("chat-1", "拥有竞品搜索能力吗？")
+            status = agent.handle_message("chat-1", "输出当前记录").text
+
+            self.assertEqual(response.data["intent"], "capability_question")
+            self.assertIn("有竞品搜索能力", response.text)
+            self.assertNotIn("最近竞品搜索", status)
+            self.assertIn("当前会话", status)
+
+    def test_image_capability_questions_use_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self._write_minimal_config(Path(temp_dir))
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                oppo_config_path=config_path,
+            )
+
+            ocr = agent.handle_message("chat-1", "接入了ocr能力吗@提交助手")
+            image2 = agent.handle_message("chat-1", "接入了image2了吗@提交助手")
+
+            self.assertIn("OCR 已接入", ocr.text)
+            self.assertEqual(ocr.data["capability"], "ocr")
+            self.assertIn("image2 目前未配置", image2.text)
+            self.assertEqual(image2.data["capability"], "image2")
+
     def test_clear_current_session_state_removes_only_that_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             state = JsonStateStore(Path(temp_dir) / "state.json")
@@ -492,10 +536,12 @@ class ReviewAgentTest(unittest.TestCase):
 
         audit = agent.handle_message("chat-1", "帮我查审核状态 200")
         check = agent.handle_message("chat-1", "帮我检查一下现在能不能提交")
+        direct_check = agent.handle_message("chat-1", "现在是否可以提交？")
 
         self.assertEqual(fake_agent.status_version_code, "200")
         self.assertIn("OPPO 审核状态", audit.text)
         self.assertIn("提交检查", check.text)
+        self.assertIn("提交检查", direct_check.text)
 
     def test_semantic_config_view_and_update(self):
         with tempfile.TemporaryDirectory() as temp_dir:

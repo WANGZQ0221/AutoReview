@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from dataclasses import dataclass
+import json
 import re
 from typing import Any, Callable
 
@@ -72,14 +73,18 @@ class ReviewAgent:
         self.llm_client = llm_client
 
     def handle_message(self, session_id: str, text: str, sender_id: str | None = None) -> AgentResponse:
-        clean_text = (text or "").strip()
+        clean_text = self._normalize_incoming_text(text)
         if not clean_text:
             return AgentResponse("我收到空消息了。发送“帮助”可以查看可用指令。", {})
 
         if clean_text in {"帮助", "help", "/help"}:
             return AgentResponse(HELP_TEXT, {"intent": "help"})
 
-        if clean_text in {"清空当前记录", "清空当前状态", "重置当前记录", "重置当前会话"}:
+        capability_response = self._answer_capability_question(clean_text)
+        if capability_response:
+            return capability_response
+
+        if clean_text in {"清空记录", "清空当前记录", "清空当前状态", "重置记录", "重置当前记录", "重置当前会话"}:
             return self.clear_session_state(session_id)
 
         if clean_text in {"清空所有记录", "清空全部记录", "重置所有记录", "重置全部会话"}:
@@ -865,6 +870,73 @@ class ReviewAgent:
         return AgentResponse(self._format_rejection_analysis(analysis), analysis)
 
     @staticmethod
+    def _normalize_incoming_text(text: str) -> str:
+        clean = str(text or "").strip()
+        clean = re.sub(r"<at\b[^>]*>.*?</at>", "", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"@\s*(提交助手|AutoReview|autoreview)\s*", "", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"(?<!\S)@[A-Za-z0-9_\-\u4e00-\u9fff]{1,32}(?!\S)", "", clean)
+        clean = re.sub(r"@[A-Za-z0-9_\-\u4e00-\u9fff]{1,32}\s*$", "", clean)
+        clean = re.sub(r"\s+", " ", clean).strip()
+        return clean
+
+    def _answer_capability_question(self, text: str) -> AgentResponse | None:
+        lowered = text.lower()
+        if not self._looks_like_capability_question(lowered):
+            return None
+
+        if "image2" in lowered:
+            image2_url = self._configured_image_analysis_url("image2_url")
+            if image2_url:
+                text = "image2 已配置，会作为图片分析的辅助能力接入。发送图片后我会记录识别结果；如果同时配置了 OCR，默认优先展示 OCR。"
+            else:
+                text = "image2 目前未配置。当前图片主流程优先使用 OCR；需要启用 image2 时，在 feishu.image_analysis.image2_url 里填接口地址。"
+            return AgentResponse(text, {"intent": "capability_question", "capability": "image2", "configured": bool(image2_url)})
+
+        if "ocr" in lowered or "文字识别" in text or "识别图片" in text:
+            ocr_url = self._configured_image_analysis_url("ocr_url")
+            if ocr_url:
+                text = "OCR 已接入。你可以直接发送审核截图，我会识别文字；如果像 OPPO 驳回截图，会继续做驳回分析。"
+            else:
+                text = "OCR 能力代码已接入，但当前配置里还没有 OCR 接口地址。请在 feishu.image_analysis.ocr_url 配好后重启飞书机器人。"
+            return AgentResponse(text, {"intent": "capability_question", "capability": "ocr", "configured": bool(ocr_url)})
+
+        if self._contains_any(lowered, ("竞品", "应用商店", "应用市场", "下载量")):
+            return AgentResponse(
+                "有竞品搜索能力。可以发送“搜索竞品：关键词”查询同类 APP；发送“记录竞品下载：关键词”会把本月能拿到的公开指标写入当前会话。"
+                "\n注意：不同商店公开数据不一样，下载量和评分可能会有缺失或查询失败。",
+                {"intent": "capability_question", "capability": "market_search", "configured": True},
+            )
+
+        if self._contains_any(lowered, ("提交", "审核", "oppo", "配置", "材料", "打包")):
+            return AgentResponse(
+                "可以。我主要能做 OPPO 审核协作：分析驳回、生成整改清单、查审核状态、提交检查、查看/暂存配置、绑定上传材料，也能辅助做竞品搜索。",
+                {"intent": "capability_question", "capability": "review_workflow", "configured": True},
+            )
+
+        return None
+
+    @staticmethod
+    def _looks_like_capability_question(text: str) -> bool:
+        if any(term in text for term in ("能力", "支持", "接入", "拥有", "有没有", "会不会", "有吗", "了吗")):
+            return True
+        return bool(re.search(r"能不能.*(ocr|image2|识别|搜索|查询|竞品|下载量)", text, flags=re.IGNORECASE))
+
+    def _configured_image_analysis_url(self, key: str) -> str:
+        if not self.oppo_config_path or not self.oppo_config_path.exists():
+            return ""
+        try:
+            config = json.loads(self.oppo_config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return ""
+        feishu = config.get("feishu") if isinstance(config, dict) else {}
+        if not isinstance(feishu, dict):
+            return ""
+        image_analysis = feishu.get("image_analysis") or {}
+        if isinstance(image_analysis, dict) and image_analysis.get(key):
+            return str(image_analysis.get(key) or "").strip()
+        return str(feishu.get(key) or "").strip()
+
+    @staticmethod
     def _extract_payload(text: str) -> str:
         parts = re.split(r"[:：]", text, maxsplit=1)
         if len(parts) == 2:
@@ -914,7 +986,7 @@ class ReviewAgent:
         )
 
     def _looks_like_session_status_request(self, text: str) -> bool:
-        return self._contains_any(text, ("当前状态", "现在状态", "会话状态", "进度", "记录了什么", "现在到哪"))
+        return self._contains_any(text, ("当前状态", "现在状态", "会话状态", "当前记录", "输出记录", "输出当前记录", "记录了什么", "进度", "现在到哪"))
 
     def _looks_like_default_app_question(self, text: str) -> bool:
         return self._contains_any(text, ("默认应用", "当前应用", "这个应用")) and self._contains_any(
