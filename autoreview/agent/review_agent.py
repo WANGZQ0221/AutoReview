@@ -900,6 +900,12 @@ class ReviewAgent:
                 text = "OCR 能力代码已接入，但当前配置里还没有 OCR 接口地址。请在 feishu.image_analysis.ocr_url 配好后重启飞书机器人。"
             return AgentResponse(text, {"intent": "capability_question", "capability": "ocr", "configured": bool(ocr_url)})
 
+        if self._looks_like_market_store_scope_question(lowered):
+            return AgentResponse(
+                _format_supported_market_stores(),
+                {"intent": "capability_question", "capability": "market_store_scope", "configured": True},
+            )
+
         if self._contains_any(lowered, ("竞品", "应用商店", "应用市场", "下载量")):
             return AgentResponse(
                 "有竞品搜索能力。可以发送“搜索竞品：关键词”查询同类 APP；发送“记录竞品下载：关键词”会把本月能拿到的公开指标写入当前会话。"
@@ -919,7 +925,17 @@ class ReviewAgent:
     def _looks_like_capability_question(text: str) -> bool:
         if any(term in text for term in ("能力", "支持", "接入", "拥有", "有没有", "会不会", "有吗", "了吗")):
             return True
+        if any(term in text for term in ("哪些", "那些", "哪几", "多少")) and any(
+            term in text for term in ("应用商店", "应用市场", "商店", "市场", "厂家", "厂商", "渠道")
+        ):
+            return True
         return bool(re.search(r"能不能.*(ocr|image2|识别|搜索|查询|竞品|下载量)", text, flags=re.IGNORECASE))
+
+    @staticmethod
+    def _looks_like_market_store_scope_question(text: str) -> bool:
+        return any(term in text for term in ("哪些", "那些", "哪几", "多少", "列表", "厂家", "厂商", "渠道")) and any(
+            term in text for term in ("应用商店", "应用市场", "商店", "市场", "厂家", "厂商", "渠道")
+        )
 
     def _configured_image_analysis_url(self, key: str) -> str:
         if not self.oppo_config_path or not self.oppo_config_path.exists():
@@ -1415,6 +1431,20 @@ def _store_label(store: Any) -> str:
         "honor_app_market": "荣耀应用市场",
     }
     return labels.get(str(store or ""), str(store or "未知商店"))
+
+
+def _format_supported_market_stores() -> str:
+    return (
+        "目前竞品搜索会尝试查询这些应用商店：\n"
+        "- Apple App Store\n"
+        "- Google Play\n"
+        "- OPPO 软件商店\n"
+        "- 小米应用商店\n"
+        "- vivo 应用商店\n"
+        "- 华为 AppGallery\n"
+        "- 荣耀应用市场\n"
+        "说明：这些都是公开页面/公开接口查询，不同商店可见数据不同；OPPO、vivo、华为等入口可能因公开页面限制而跳过或拿不到结果。"
+    )
 
 
 def _clean_market_query(value: Any) -> str:

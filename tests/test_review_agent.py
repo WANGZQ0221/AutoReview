@@ -485,6 +485,26 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertNotIn("最近竞品搜索", status)
             self.assertIn("当前会话", status)
 
+    def test_market_store_scope_question_lists_supported_stores(self):
+        class RaisingMarketSearcher:
+            def search_competitors(self, query, limit=8):
+                raise AssertionError("store scope question should not run market search")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: RaisingMarketSearcher(),
+            )
+
+            response = agent.handle_message("chat-1", "目前可以查询那些厂家的应用商店？@提交助手")
+
+            self.assertEqual(response.data["intent"], "capability_question")
+            self.assertEqual(response.data["capability"], "market_store_scope")
+            self.assertIn("Apple App Store", response.text)
+            self.assertIn("OPPO 软件商店", response.text)
+            self.assertIn("荣耀应用市场", response.text)
+            self.assertNotIn("应用商店竞品搜索：目前可以", response.text)
+
     def test_image_capability_questions_use_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = self._write_minimal_config(Path(temp_dir))
