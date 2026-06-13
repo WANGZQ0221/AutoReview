@@ -380,18 +380,24 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("请提供有效", response.text)
             self.assertNotIn("应用商店竞品搜索：。", response.text)
 
-    def test_generic_search_phrase_uses_market_search_after_llm_understands_message(self):
+    def test_llm_chat_decision_wins_over_generic_search_rule(self):
+        class RaisingMarketSearcher:
+            def search_competitors(self, query, limit=8):
+                raise AssertionError("LLM chat decision should not fall through to market search")
+
         with tempfile.TemporaryDirectory() as temp_dir:
-            llm = FakeLlmClient({"intent": "chat", "confidence": 1, "reply": "should not be used"})
+            llm = FakeLlmClient({"intent": "chat", "confidence": 1, "reply": "这句话不需要调用工具。"})
             agent = ReviewAgent(
                 JsonStateStore(Path(temp_dir) / "state.json"),
-                market_searcher_factory=lambda: FakeMarketSearcher(),
+                market_searcher_factory=lambda: RaisingMarketSearcher(),
                 llm_client=llm,
             )
 
             response = agent.handle_message("chat-1", "搜索，王者荣耀", "user-1")
 
-            self.assertIn("应用商店竞品搜索：王者荣耀", response.text)
+            self.assertEqual(response.data["intent"], "chat")
+            self.assertIn("不需要调用工具", response.text)
+            self.assertNotIn("应用商店竞品搜索", response.text)
             self.assertEqual(len(llm.calls), 1)
 
     def test_default_app_question_reads_config(self):
@@ -433,6 +439,36 @@ class ReviewAgentTest(unittest.TestCase):
 
             self.assertIn("应用商店竞品搜索", response.text)
             self.assertIn("背单词", response.text)
+
+    def test_data_platform_research_does_not_run_app_store_search(self):
+        class RaisingMarketSearcher:
+            def search_competitors(self, query, limit=8):
+                raise AssertionError("data platform research should not run app store search")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            llm = FakeLlmClient(
+                {
+                    "intent": "market_search",
+                    "confidence": 0.9,
+                    "query": "第三方数据平台 类似七麦 点点数据",
+                }
+            )
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: RaisingMarketSearcher(),
+                llm_client=llm,
+            )
+
+            response = agent.handle_message(
+                "chat-1",
+                "搜一下第三方数据平台。就是类似于七麦这种，应用商店统计数据的平台。",
+                "user-1",
+            )
+
+            self.assertEqual(response.data["intent"], "app_store_data_platform_research")
+            self.assertIn("应用商店数据/ASO 平台调研", response.text)
+            self.assertIn("七麦数据", response.text)
+            self.assertNotIn("应用商店竞品搜索", response.text)
 
     def test_semantic_market_snapshot_uses_session_app_name(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -759,10 +795,10 @@ class ReviewAgentTest(unittest.TestCase):
             agent = ReviewAgent(
                 JsonStateStore(base_dir / "state.json"),
                 oppo_config_path=config_path,
-                llm_client=llm,
             )
 
             agent.handle_message("chat-1", "默认不查询Google Play")
+            agent.llm_client = llm
             agent.handle_message("chat-1", "随便聊一句")
             context = llm.calls[-1][1]
 

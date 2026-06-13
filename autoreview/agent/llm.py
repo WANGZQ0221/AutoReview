@@ -206,6 +206,7 @@ _SYSTEM_PROMPT = """你是 AutoReview 的飞书协作 agent，项目目标是自
 - 用户要求最终提交/上架时，优先识别为 submission_check 或 submit_checklist，让本地工具先检查。
 - 用户要求“默认不查/以后不查/恢复查询某应用商店”时，识别为 market_store_preference，并使用 supported_market_stores 里的 store id。
 - 生成 market_search 或 market_download_snapshot 时，要结合 preferences.market_stores，不要建议查询当前会话已排除的商店。
+- market_search 只用于“到应用商店里查同类 APP/游戏”。如果用户问“类似七麦/点点数据/蝉大师/Sensor Tower/data.ai 的第三方数据平台、ASO 平台、应用商店统计数据平台”，这是行业资料调研，不是应用商店竞品搜索；识别为 chat，并直接给出简短平台清单或说明需要网页搜索。
 - 回答和命令判断要参考 default_config 和 session；不要把用户偏好写入默认配置。
 - 如果缺关键信息，intent 可保持目标意图，同时 reply 提示补充。
 """

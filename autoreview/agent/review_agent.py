@@ -84,7 +84,7 @@ class ReviewAgent:
                 clean_text,
                 llm_decision,
                 sender_id=sender_id,
-                allow_chat=False,
+                allow_chat=True,
             )
             if llm_response:
                 return llm_response
@@ -155,10 +155,16 @@ class ReviewAgent:
                     "请按“搜索竞品：关键词”发送，例如“搜索竞品：英语四级单词”。",
                     {"intent": "market_search", "missing": "query"},
                 )
+            research_response = self._handle_app_store_data_platform_research(clean_text, query)
+            if research_response:
+                return research_response
             return self.search_competitors(session_id, query, sender_id=sender_id)
 
         generic_search_query = self._extract_generic_app_search_query(clean_text)
         if generic_search_query:
+            research_response = self._handle_app_store_data_platform_research(clean_text, generic_search_query)
+            if research_response:
+                return research_response
             return self.search_competitors(session_id, generic_search_query, sender_id=sender_id)
 
         if clean_text.startswith(("记录竞品下载", "记录竞品月报", "月度记录竞品")):
@@ -885,6 +891,9 @@ class ReviewAgent:
             query = str(decision.get("query") or self._extract_market_semantic_query(text, session_id)).strip()
             if not query:
                 return AgentResponse("要查哪个应用方向的竞品？例如“英语四级单词”。", {"intent": intent, "missing": "query"})
+            research_response = self._handle_app_store_data_platform_research(text, query, llm_intent=intent)
+            if research_response:
+                return research_response
             if intent == "market_download_snapshot":
                 return self.record_competitor_downloads(session_id, query, sender_id=sender_id)
             return self.search_competitors(session_id, query, sender_id=sender_id)
@@ -1303,6 +1312,8 @@ class ReviewAgent:
         )
 
     def _parse_market_semantic_intent(self, text: str, session_id: str) -> tuple[str, str] | None:
+        if _looks_like_app_store_data_platform_research(text):
+            return None
         lowered = text.lower()
         market_terms = ("竞品", "对标", "同类", "同类型", "类似", "应用商店", "应用", "app", "软件")
         search_terms = ("找", "搜索", "查", "看看", "有哪些", "分析", "调研", "研究")
@@ -1338,6 +1349,24 @@ class ReviewAgent:
         analysis = session.get("last_rejection_analysis") or {}
         app_info = self._default_app_info(session_id)
         return str(analysis.get("similar_app") or app_info.get("app_name") or "").strip()
+
+    @staticmethod
+    def _handle_app_store_data_platform_research(
+        text: str,
+        query: str = "",
+        *,
+        llm_intent: str = "",
+    ) -> AgentResponse | None:
+        if not _looks_like_app_store_data_platform_research(text, query):
+            return None
+        return AgentResponse(
+            _format_app_store_data_platform_research(),
+            {
+                "intent": "app_store_data_platform_research",
+                "query": _clean_market_query(query),
+                "redirected_from": llm_intent or "market_search",
+            },
+        )
 
     @staticmethod
     def _extract_assignment_payload(text: str) -> str:
@@ -1737,6 +1766,64 @@ def _clean_market_query(value: Any) -> str:
 def _is_contextual_app_reference(value: Any) -> bool:
     text = _clean_market_query(value)
     return text in {"这个", "这个应用", "当前", "当前应用", "默认", "默认应用", "它", "该应用"}
+
+
+APP_STORE_DATA_PLATFORM_NAMES = (
+    "七麦",
+    "点点数据",
+    "点点",
+    "蝉大师",
+    "易观千帆",
+    "questmobile",
+    "sensor tower",
+    "data.ai",
+    "apptweak",
+    "mobileaction",
+    "appfigures",
+    "apptopia",
+    "similarweb",
+)
+
+
+APP_STORE_DATA_PLATFORM_HINTS = (
+    "数据平台",
+    "第三方数据",
+    "统计数据",
+    "商店统计",
+    "应用统计",
+    "应用数据",
+    "榜单数据",
+    "aso平台",
+    "aso 平台",
+    "aso工具",
+    "aso 工具",
+    "下载收入",
+    "收入预估",
+    "市场情报",
+    "移动应用情报",
+)
+
+
+def _looks_like_app_store_data_platform_research(text: Any, query: Any = "") -> bool:
+    combined = f"{text or ''} {query or ''}".lower()
+    if any(name in combined for name in APP_STORE_DATA_PLATFORM_NAMES):
+        return any(term in combined for term in ("平台", "数据", "统计", "aso", "类似", "竞品", "这种"))
+    return any(hint in combined for hint in APP_STORE_DATA_PLATFORM_HINTS)
+
+
+def _format_app_store_data_platform_research() -> str:
+    return "\n".join(
+        [
+            "这个需求更像“应用商店数据/ASO 平台调研”，不是去应用商店里搜 APP 竞品。",
+            "常见同类平台可以先看：",
+            "- 七麦数据：国内 ASO、榜单、关键词、竞品和应用商店数据。",
+            "- 点点数据：App/Game 数据、下载收入预估、榜单、SDK 和竞品分析。",
+            "- 蝉大师：国内 ASO 和应用增长相关数据平台。",
+            "- QuestMobile / 易观千帆：更偏移动互联网用户规模、画像和行业趋势。",
+            "- Sensor Tower / AppTweak / MobileAction / Appfigures / Similarweb：海外应用市场情报、ASO、下载收入和广告分析。",
+            "说明：当前“竞品搜索”工具只查应用商店公开页面；这类平台调研应走网页资料搜索或大模型普通答复。",
+        ]
+    )
 
 
 def _format_market_metrics(app: JsonDict) -> str:
