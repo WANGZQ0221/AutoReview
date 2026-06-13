@@ -122,19 +122,182 @@
       "updated_at": 1781181224
     },
     "oc_cc9f7a9bd28443c2020b3c67ef02e3fe": {
+      "app_info": {
+        "app_name": "小学四年级英语",
+        "pkg_name": "com.pelbs.book43",
+        "version_code": "32"
+      },
+      "last_oppo_status": {
+        "pkg_name": " com.pelbs.book43",
+        "version_code": "32",
+        "task": {
+          "pkg_name": "com.pelbs.book43",
+          "version_code": "32",
+          "task_state": "3",
+          "err_msg": "您上传的apk中的包名com.pelbs.book1067与当前应用包名不一致，请重新上传"
+        },
+        "app_info": {
+          "app_id": "30472919",
+          "pkg_name": "com.pelbs.book43",
+          "type": 7,
+          "sign": "704f8d92c6b8855065278766d2469849",
+          "dev_id": "631637683",
+          "app_key": "eyJ2ZXJzaW9uIjowLCJhbGciOiJhZXMtMjU2LWdjbSIsInBhZGRpbmciOiJOb1BhZGRpbmciLCJpdiI6Ik1IMFM1VTZrT3NNVjAyeDgiLCJ0YWciOiJMZ0twd3VBd2ErT2taYXdlem5ObXVnPT0iLCJlbmNyeXB0ZWRfZGF0YSI6Im1mWkdSRFVkTCswaW9KblplZUgzd095aUdxVzZkd3RVUnRDVSszbjd2Smc9In0=",
+          "update_time": "2021年02月08日 23:22:38",
+          "app_create_time": "2021-02-08 22:48:13",
+          "second_category_id": "6761",
+          "third_category_id": "6670",
+          "app_name": "小学四年级英语",
+          "is_freeze": "0",
+          "freeze_reason": null,
+          "refuse_reason": "其它, 备注:开发者您好，您所提软著与您名下“小学英语四年级上册”“小学四年级下册英语”所提软著资质一致。涉嫌利用同一软著内容提交多个资源，刻意规避审核，我们暂不予通过。<br>请您核查APP内容资源，若您是需要换包运营，还请先优先下架在架资源后再连同资质重新提审。（流程参考：https://open.oppomobile.com/wiki/doc#id=10034）<br>如有疑问，可咨询OPPO开放平台客服。",
+          "tag_list": null,
+          "is_business": "0",
+          "game_type": "0",
+          "copyright_url": "https://store.heytapimage.com/img/202102/08/faa90f2ad3901cd4ad35b7c9277032b9.png,,https://store.heytapimage.com/img/202102/08/f59d6fc972c08b66835febfc9464122d.png,",
+          "special_url": "",
+          "special_file_url": "",
+          "freeze_file": null,
+          "business_username": "",
+          "business_email": "",
+          "business_mobile": "",
+          "business_qq": "",
+          "business_position": "",
+          "business_address": "",
+          "freeze_advice": null,
+          "app_type": "0",
+          "app_real_type": "0",
+          "electronic_cert_url": "",
+          "icp_url": "闽ICP备20010240号",
+          "relation_app_id": "0",
+          "business_wx": "",
+          "version_id": "22091756",
+          "version_code": "32",
+          "version_name": "3.43.2.2",
+          "apk_url": "/apk/202102/08/0aa7fefec842d1037b04214123b69abc.apk",
+          "apk_size": "92594625",
+          "apk_md5": "4a23340716a23be63186261cb2e9a04f",
+          "header_md5": "c4721fda3f2abc326224e09740abae49",
+          "package_permission": "android.permission.INTERNET,android.permission.CHANGE_NETWORK_STATE,android.permission.CHANGE_WIFI_STATE,android.permission.ACCESS_NETWORK_STATE,android.permission.ACCESS_WIFI_STATE,android.permission.WRITE_EXTERNAL_STORAGE,android.permission.RESTART_PACKAGES,android.permission.KILL_BACKGROUND_PROCESSES,android.permission.READ_PHONE_STATE,android.permission.MODIFY_AUDIO_SETTINGS,android.permission.RECORD_AUDIO,android.permission.REQUEST_INSTALL_PACKAGES,android.permission.WAKE_LOCK,android.permission.READ_EXTERNAL_STORAGE,android.permission.BLUETOOTH_ADMIN,android.permission.BLUETOOTH,android.permission.ACCESS_COARSE_LOCATION,android.permission.ACCESS_FINE_LOCATION,android.permission.ACCESS_BACKGROUND_LOCATION,android.permission.ACTIVITY_RECOGNITION,com.huawei.hms.permission.ACTIVITY_RECOGNITION",
+          "resolution": null,
+          "version_type": "1",
+          "create_time": "2021-02-08 23:22:38",
+          "ver_second_category_id": "6761",
+          "ver_third_category_id": "6670",
+          "adaptive_equipment": "4",
+          "adaptive_type": "0",
+          "version_device": "1",
+          "apk_full_url": "https://storedl1.audit-oppomobile.com/apk/202102/08/0aa7fefec842d1037b04214123b69abc.apk",
+          "online_type": "1",
+          "sche_online_time": null,
+          "test_type": "0",
+          "test_start_time": "0000-00-00 00:00:00",
+          "test_end_time": "0000-00-00 00:00:00",
+          "player_customer_email": null,
+          "player_customer_phone": null,
+          "player_customer_qq": "",
+          "is_signature": "0",
+          "is_pre_download": "1",
+          "customer_contact": null,
+          "icon_url": "https://store.heytapimage.com/img/202102/08/dae25df55b8604db327b93660ee30ba4.png",
+          "icon_md5": "",
+          "summary": "小学四年级精通英语点读机",
+          "detail_desc": "提供小学四年级下册精通英语，与课本结合，教材同步，高清音频，外国教师亲自朗读。方便课前预习，课后复习。 单词听力练习，增强记忆，能够轻松听懂英语。 单词跟读练习，开口读英语，练就一口流利的英语。 只需下载《小学四年级英语》，从此让孩子的英语学习无比容易，回回考满分！",
+          "update_desc": "申请新应用",
+          "app_subname": "",
+          "test_desc": "无",
+          "video_url": "",
+          "pic_url": "https://store.heytapimage.com/img/202102/08/cb947f4bda8e5c1f284991d7e65b212d.png,https://store.heytapimage.com/img/202102/08/b7b4d9ea2614cab9afccce3e4fe56a53.png,https://store.heytapimage.com/img/202102/08/75a7cc64b1396dffbed2c9b1ad4f3af3.jpg,https://store.heytapimage.com/img/202102/08/e4b2cae9e57828756cd9327567c95630.jpg",
+          "package_permission_desc": "数据网络开关,WLAN网络开关,数据网络开关,WLAN网络开关,录音或通话录音,蓝牙开关,蓝牙开关,读取位置信息",
+          "video_pic_url": null,
+          "cover_url": null,
+          "landscape_pic_url": "",
+          "privacy_source_url": "http://legalzqdd.yfqp.shop/",
+          "level": "-100",
+          "state": "0",
+          "audit_status": "444",
+          "online_time": "0000-00-00 00:00:00",
+          "offline_time": "0000-00-00 00:00:00",
+          "business_refuse_reason": "a:2:{i:0;s:6:\"其它\";s:6:\"备注\";s:491:\" 备注:开发者您好，您所提软著与您名下“小学英语四年级上册”“小学四年级下册英语”所提软著资质一致。涉嫌利用同一软著内容提交多个资源，刻意规避审核，我们暂不予通过。<br>请您核查APP内容资源，若您是需要换包运营，还请先优先下架在架资源后再连同资质重新提审。（流程参考：https://open.oppomobile.com/wiki/doc#id=10034）<br>如有疑问，可咨询OPPO开放平台客服。\";}",
+          "old_audit_status": "3",
+          "age_level": "0",
+          "change_state": "444",
+          "online_info_offline_apply": [],
+          "size": "88.31 MB",
+          "audit_status_name": "审核不通过",
+          "transfer_state": -1,
+          "update_info_check": 0,
+          "level_tag": "",
+          "refuse_advice": "",
+          "refuse_file": "",
+          "skymirror_privacy_testing_report": "",
+          "level_reason": "",
+          "level_file": "",
+          "revoke": 0,
+          "unfreeze_type": 0,
+          "freeze_reason_with_sugg": [],
+          "refuse_reason_with_sugg": [
+            {
+              "reason": "其它",
+              "advice": ""
+            },
+            {
+              "reason": " 备注:开发者您好，您所提软著与您名下“小学英语四年级上册”“小学四年级下册英语”所提软著资质一致。涉嫌利用同一软著内容提交多个资源，刻意规避审核，我们暂不予通过。<br>请您核查APP内容资源，若您是需要换包运营，还请先优先下架在架资源后再连同资质重新提审。（流程参考：https://open.oppomobile.com/wiki/doc#id=10034）<br>如有疑问，可咨询OPPO开放平台客服。",
+              "advice": ""
+            }
+          ],
+          "is_has_reserve": 0,
+          "reserve_state": 2,
+          "video_url_material": [],
+          "pic_url_material": [
+            {
+              "url": "https://store.heytapimage.com/img/202102/08/cb947f4bda8e5c1f284991d7e65b212d.png",
+              "width": "1080",
+              "height": "1920",
+              "md5": "4fcbb5e4625e62032152560d5300a81b",
+              "size": "292782"
+            },
+            {
+              "url": "https://store.heytapimage.com/img/202102/08/b7b4d9ea2614cab9afccce3e4fe56a53.png",
+              "width": "1080",
+              "height": "1920",
+              "md5": "cbdd0013401f33d2e2e87f4ee3fe2fa1",
+              "size": "1016681"
+            },
+            {
+              "url": "https://store.heytapimage.com/img/202102/08/75a7cc64b1396dffbed2c9b1ad4f3af3.jpg",
+              "width": "1080",
+              "height": "1920",
+              "md5": "ef904dbdbbe80c48ba039b4be7f4a3c0",
+              "size": "219515"
+            },
+            {
+              "url": "https://store.heytapimage.com/img/202102/08/e4b2cae9e57828756cd9327567c95630.jpg",
+              "width": "1080",
+              "height": "1920",
+              "md5": "c5d9e44339e32f874aeb68514340d75e",
+              "size": "150268"
+            }
+          ],
+          "landscape_pic_url_material": []
+        },
+        "review_state": "rejected"
+      },
+      "sender_id": "ou_11fbfc60bac4f4500d9792efc60aec0f",
+      "updated_at": 1781265552,
       "last_market_search": {
-        "query": "应用",
+        "query": "单词",
         "apps": [
           {
             "store": "apple_app_store",
-            "app_id": "6451248050",
-            "name": "应用锁 - 软件锁",
-            "developer": "文忠 许",
-            "package_name": "com.wen.applocker",
-            "category": "Utilities",
-            "url": "https://apps.apple.com/cn/app/%E5%BA%94%E7%94%A8%E9%94%81-%E8%BD%AF%E4%BB%B6%E9%94%81/id6451248050?uo=4",
-            "rating": 4.71499,
-            "rating_count": 8561,
+            "app_id": "698570469",
+            "name": "不背单词-四六级考研等英语单词学习",
+            "developer": "Beijing Is-Cool Technology Co., Ltd",
+            "package_name": "cn.com.langeasy.LangEasyLexis",
+            "category": "Education",
+            "url": "https://apps.apple.com/cn/app/%E4%B8%8D%E8%83%8C%E5%8D%95%E8%AF%8D-%E5%9B%9B%E5%85%AD%E7%BA%A7%E8%80%83%E7%A0%94%E7%AD%89%E8%8B%B1%E8%AF%AD%E5%8D%95%E8%AF%8D%E5%AD%A6%E4%B9%A0/id698570469?uo=4",
+            "rating": 4.84525,
+            "rating_count": 423076,
             "downloads": null,
             "downloads_text": "",
             "rank": 1,
@@ -144,15 +307,52 @@
             }
           },
           {
+            "store": "oppo_app_market",
+            "app_id": "30032006",
+            "name": "阳阳魔法英语总动员：单词王国",
+            "developer": "",
+            "package_name": "com.xuexue.ai.english.android",
+            "category": "",
+            "url": "softmarket://market_appdetail?pn=com.oppo.market&gb=1&params=enter_id%3D15%26out_package_name%3Dcom.xuexue.ai.english.android%26out_start_download%3Dfalse%26enter_params%3Dout_operator",
+            "rating": 4.92278,
+            "rating_count": 259,
+            "downloads": 300000,
+            "downloads_text": "30 万次",
+            "rank": 1,
+            "raw_metrics": {
+              "download_metric": "public_oppo_download_desc",
+              "download_url": "https://istore.oppomobile.com/download/v1/25459551",
+              "version_id": 25459551,
+              "size": "379 MB"
+            }
+          },
+          {
+            "store": "xiaomi_app_store",
+            "app_id": "不背单词-真实语境记单词",
+            "name": "不背单词-真实语境记单词",
+            "developer": "",
+            "package_name": "",
+            "category": "",
+            "url": "https://app.mi.com/search?keywords=%E4%B8%8D%E8%83%8C%E5%8D%95%E8%AF%8D-%E7%9C%9F%E5%AE%9E%E8%AF%AD%E5%A2%83%E8%AE%B0%E5%8D%95%E8%AF%8D",
+            "rating": null,
+            "rating_count": null,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 1,
+            "raw_metrics": {
+              "download_metric": "public_xiaomi_search_suggestion"
+            }
+          },
+          {
             "store": "apple_app_store",
-            "app_id": "370139302",
-            "name": "QQ浏览器-高考AI填志愿",
-            "developer": "Tencent Technology (Shenzhen) Company Limited",
-            "package_name": "com.tencent.mttlite",
-            "category": "Utilities",
-            "url": "https://apps.apple.com/cn/app/qq%E6%B5%8F%E8%A7%88%E5%99%A8-%E9%AB%98%E8%80%83ai%E5%A1%AB%E5%BF%97%E6%84%BF/id370139302?uo=4",
-            "rating": 4.47776,
-            "rating_count": 808219,
+            "app_id": "557545298",
+            "name": "百词斩-学外语、背单词必备",
+            "developer": "Chengdu Chaoaixuexi Technology Co, Ltd",
+            "package_name": "com.chaoui.jiongji100CN",
+            "category": "Education",
+            "url": "https://apps.apple.com/cn/app/%E7%99%BE%E8%AF%8D%E6%96%A9-%E5%AD%A6%E5%A4%96%E8%AF%AD-%E8%83%8C%E5%8D%95%E8%AF%8D%E5%BF%85%E5%A4%87/id557545298?uo=4",
+            "rating": 4.82341,
+            "rating_count": 1712109,
             "downloads": null,
             "downloads_text": "",
             "rank": 2,
@@ -162,15 +362,32 @@
             }
           },
           {
+            "store": "xiaomi_app_store",
+            "app_id": "单词鸭-消消乐背单词&导入单词",
+            "name": "单词鸭-消消乐背单词&导入单词",
+            "developer": "",
+            "package_name": "",
+            "category": "",
+            "url": "https://app.mi.com/search?keywords=%E5%8D%95%E8%AF%8D%E9%B8%AD-%E6%B6%88%E6%B6%88%E4%B9%90%E8%83%8C%E5%8D%95%E8%AF%8D%26%E5%AF%BC%E5%85%A5%E5%8D%95%E8%AF%8D",
+            "rating": null,
+            "rating_count": null,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 2,
+            "raw_metrics": {
+              "download_metric": "public_xiaomi_search_suggestion"
+            }
+          },
+          {
             "store": "apple_app_store",
-            "app_id": "535886823",
-            "name": "Google Chrome",
-            "developer": "Google LLC",
-            "package_name": "com.google.chrome.ios",
-            "category": "Utilities",
-            "url": "https://apps.apple.com/cn/app/google-chrome/id535886823?uo=4",
-            "rating": 4.63684,
-            "rating_count": 305750,
+            "app_id": "888483369",
+            "name": "墨墨背单词 | 四六级考研等英语词汇记忆",
+            "developer": "MaiMemo Inc.",
+            "package_name": "com.maimemo.ios.momo",
+            "category": "Education",
+            "url": "https://apps.apple.com/cn/app/%E5%A2%A8%E5%A2%A8%E8%83%8C%E5%8D%95%E8%AF%8D-%E5%9B%9B%E5%85%AD%E7%BA%A7%E8%80%83%E7%A0%94%E7%AD%89%E8%8B%B1%E8%AF%AD%E8%AF%8D%E6%B1%87%E8%AE%B0%E5%BF%86/id888483369?uo=4",
+            "rating": 4.85154,
+            "rating_count": 955565,
             "downloads": null,
             "downloads_text": "",
             "rank": 3,
@@ -180,72 +397,35 @@
             }
           },
           {
+            "store": "xiaomi_app_store",
+            "app_id": "单词拼读王",
+            "name": "单词拼读王",
+            "developer": "",
+            "package_name": "",
+            "category": "",
+            "url": "https://app.mi.com/search?keywords=%E5%8D%95%E8%AF%8D%E6%8B%BC%E8%AF%BB%E7%8E%8B",
+            "rating": null,
+            "rating_count": null,
+            "downloads": null,
+            "downloads_text": "",
+            "rank": 3,
+            "raw_metrics": {
+              "download_metric": "public_xiaomi_search_suggestion"
+            }
+          },
+          {
             "store": "apple_app_store",
-            "app_id": "1490607195",
-            "name": "AppRaven: 免费应用程序",
-            "developer": "Simon Zvara",
-            "package_name": "net.appraven.app",
-            "category": "Shopping",
-            "url": "https://apps.apple.com/cn/app/appraven-%E5%85%8D%E8%B4%B9%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F/id1490607195?uo=4",
-            "rating": 4.47464,
-            "rating_count": 769,
+            "app_id": "698013609",
+            "name": "扇贝单词英语版-四六级背单词、考研单词必备",
+            "developer": "Nanjing Beiwan Information & Tech Ltd.",
+            "package_name": "com.beeblio.sentence",
+            "category": "Education",
+            "url": "https://apps.apple.com/cn/app/%E6%89%87%E8%B4%9D%E5%8D%95%E8%AF%8D%E8%8B%B1%E8%AF%AD%E7%89%88-%E5%9B%9B%E5%85%AD%E7%BA%A7%E8%83%8C%E5%8D%95%E8%AF%8D-%E8%80%83%E7%A0%94%E5%8D%95%E8%AF%8D%E5%BF%85%E5%A4%87/id698013609?uo=4",
+            "rating": 4.81579,
+            "rating_count": 281911,
             "downloads": null,
             "downloads_text": "",
             "rank": 4,
-            "raw_metrics": {
-              "download_metric": "not_public",
-              "country": "cn"
-            }
-          },
-          {
-            "store": "apple_app_store",
-            "app_id": "444934666",
-            "name": "QQ",
-            "developer": "Tencent Technology (Shenzhen) Company Limited",
-            "package_name": "com.tencent.mqq",
-            "category": "Social Networking",
-            "url": "https://apps.apple.com/cn/app/qq/id444934666?uo=4",
-            "rating": 3.91311,
-            "rating_count": 2271674,
-            "downloads": null,
-            "downloads_text": "",
-            "rank": 5,
-            "raw_metrics": {
-              "download_metric": "not_public",
-              "country": "cn"
-            }
-          },
-          {
-            "store": "apple_app_store",
-            "app_id": "382201985",
-            "name": "百度-AI智能搜索",
-            "developer": "Beijing Baidu Netcom Science & Technology Co.,Ltd",
-            "package_name": "com.baidu.BaiduMobile",
-            "category": "Utilities",
-            "url": "https://apps.apple.com/cn/app/%E7%99%BE%E5%BA%A6-ai%E6%99%BA%E8%83%BD%E6%90%9C%E7%B4%A2/id382201985?uo=4",
-            "rating": 4.61782,
-            "rating_count": 7861521,
-            "downloads": null,
-            "downloads_text": "",
-            "rank": 6,
-            "raw_metrics": {
-              "download_metric": "not_public",
-              "country": "cn"
-            }
-          },
-          {
-            "store": "apple_app_store",
-            "app_id": "1142110895",
-            "name": "抖音",
-            "developer": "Beijing Douyin Technology Co., Ltd.",
-            "package_name": "com.ss.iphone.ugc.Aweme",
-            "category": "Entertainment",
-            "url": "https://apps.apple.com/cn/app/%E6%8A%96%E9%9F%B3/id1142110895?uo=4",
-            "rating": 4.87566,
-            "rating_count": 52028349,
-            "downloads": null,
-            "downloads_text": "",
-            "rank": 7,
             "raw_metrics": {
               "download_metric": "not_public",
               "country": "cn"
@@ -270,15 +450,15 @@
           },
           {
             "store": "oppo_app_market",
-            "status": "skipped",
-            "result_count": 0,
-            "message": "公开搜索入口不可用，已跳过"
+            "status": "ok",
+            "result_count": 1,
+            "message": ""
           },
           {
             "store": "xiaomi_app_store",
-            "status": "no_match",
-            "result_count": 0,
-            "message": "未解析到匹配结果"
+            "status": "ok",
+            "result_count": 5,
+            "message": ""
           },
           {
             "store": "vivo_app_store",
@@ -288,9 +468,9 @@
           },
           {
             "store": "huawei_appgallery",
-            "status": "no_match",
+            "status": "skipped",
             "result_count": 0,
-            "message": "未解析到匹配结果"
+            "message": "公开页面为 SPA 壳，静态请求未包含搜索结果"
           },
           {
             "store": "honor_app_market",
@@ -299,10 +479,8 @@
             "message": "公开搜索入口不可用，已跳过"
           }
         ]
-      },
-      "sender_id": "ou_11fbfc60bac4f4500d9792efc60aec0f",
-      "updated_at": 1781248224
+      }
     }
   },
-  "updated_at": 1781248224
+  "updated_at": 1781265552
 }

@@ -378,13 +378,110 @@ class PublicHtmlAppStoreProvider:
 class OppoAppMarketProvider(PublicHtmlAppStoreProvider):
     name = "oppo_app_market"
     display_name = "OPPO 软件商店"
-    base_url = "https://www.heytapmobi.com"
+    base_url = "https://app.cdo.oppomobile.com"
     search_url_templates = (
+        "https://app.cdo.oppomobile.com/home/store/index.json?start=0&size={limit}",
+        "https://app.cdo.oppomobile.com/home/store/required.json?start=0&size={limit}",
+        "https://app.cdo.oppomobile.com/home/store?module=2",
+        "https://m.store.oppomobile.com/",
         "https://www.heytapmobi.com/cn/search?keyword={query_plus}",
         "https://www.heytapmobi.com/cn/search?q={query_plus}",
         "https://www.heytapmobi.com/m/store/search?keyword={query_plus}",
     )
-    detail_url_patterns = (r"heytapmobi\.com/.*/app", r"heytapmobi\.com/.*/detail")
+    detail_url_patterns = (
+        r"app\.cdo\.oppomobile\.com",
+        r"store\.oppomobile\.com",
+        r"istore\.oppomobile\.com/download",
+        r"softmarket://market_appdetail",
+        r"heytapmobi\.com/.*/app",
+        r"heytapmobi\.com/.*/detail",
+    )
+
+    def _format_url(self, template: str, query: str) -> str:
+        return template.format(
+            query=quote(query),
+            query_plus=quote_plus(query),
+            limit=20,
+        )
+
+    def _parse_search_page(
+        self,
+        text: str,
+        *,
+        query: str,
+        search_url: str,
+        limit: int,
+    ) -> list[AppMarketListing]:
+        apps = self._parse_oppo_json_apps(text, search_url=search_url)
+        apps.extend(self._parse_oppo_html_apps(text, search_url=search_url))
+        if apps:
+            unique_apps = _dedupe_listings(apps)
+            filtered = [app for app in unique_apps if _listing_matches_query(app, query)]
+            return [_with_rank(app, index) for index, app in enumerate(filtered[:limit], start=1)]
+        return super()._parse_search_page(text, query=query, search_url=search_url, limit=limit)
+
+    def _parse_oppo_json_apps(self, text: str, *, search_url: str) -> list[AppMarketListing]:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return []
+
+        apps: list[AppMarketListing] = []
+        for item in _iter_json_objects(data):
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("appName") or item.get("name") or "").strip()
+            package_name = str(item.get("pkgName") or item.get("packageName") or item.get("pkg") or "").strip()
+            app_id = str(item.get("appId") or item.get("verId") or package_name or "").strip()
+            if not name or not (app_id or package_name):
+                continue
+            downloads_text = str(item.get("dlDesc") or item.get("downloadDesc") or item.get("downloads") or "")
+            download_url = str(item.get("url") or "").strip()
+            detail_url = _oppo_detail_url(package_name or app_id)
+            apps.append(
+                AppMarketListing(
+                    store=self.name,
+                    app_id=app_id,
+                    name=name,
+                    package_name=package_name,
+                    category=str(item.get("catName") or item.get("category") or ""),
+                    url=detail_url or download_url or search_url,
+                    rating=_optional_float(item.get("grade") or item.get("rating")),
+                    rating_count=_optional_int(item.get("gradeCount") or item.get("point") or item.get("ratingCount")),
+                    downloads=_parse_download_count(downloads_text) or _optional_int(item.get("dlCount")),
+                    downloads_text=downloads_text,
+                    raw_metrics={
+                        "download_metric": "public_oppo_download_desc",
+                        "download_url": download_url,
+                        "version_id": item.get("verId"),
+                        "size": item.get("sizeDesc"),
+                    },
+                )
+            )
+        return apps
+
+    def _parse_oppo_html_apps(self, text: str, *, search_url: str) -> list[AppMarketListing]:
+        apps: list[AppMarketListing] = []
+        for item in re.findall(r"<li\b[^>]*\bpkg=[\"'][^\"']+[\"'][^>]*>.*?</li>", text, flags=re.S | re.I):
+            pkg = _first_regex(item, r"\bpkg=[\"']([^\"']+)[\"']")
+            name = _clean_html_text(_first_regex(item, r"<h3[^>]*>(.*?)</h3>"))
+            if not pkg or not name:
+                continue
+            downloads_text = _clean_html_text(_first_regex(item, r"<p[^>]*class=[\"']describe[\"'][^>]*>(.*?)</p>"))
+            apps.append(
+                AppMarketListing(
+                    store=self.name,
+                    app_id=pkg,
+                    name=name,
+                    package_name=pkg,
+                    url=_oppo_detail_url(pkg) or search_url,
+                    rating=_optional_float(_first_regex(item, r"\bgrade=[\"']([^\"']+)[\"']")),
+                    downloads=_parse_download_count(downloads_text),
+                    downloads_text=downloads_text,
+                    raw_metrics={"download_metric": "public_oppo_download_desc"},
+                )
+            )
+        return apps
 
 
 class XiaomiAppStoreProvider(PublicHtmlAppStoreProvider):
@@ -392,10 +489,120 @@ class XiaomiAppStoreProvider(PublicHtmlAppStoreProvider):
     display_name = "小米应用商店"
     base_url = "https://app.mi.com"
     search_url_templates = (
+        "https://app.mi.com/suggestionApi?keywords={query_plus}",
+        "https://app.mi.com/details?id={query}",
         "https://app.mi.com/search?keywords={query_plus}",
         "https://app.mi.com/search?word={query_plus}",
     )
     detail_url_patterns = (r"app\.mi\.com/details", r"app\.mi\.com/detail")
+
+    def _parse_search_page(
+        self,
+        text: str,
+        *,
+        query: str,
+        search_url: str,
+        limit: int,
+    ) -> list[AppMarketListing]:
+        apps = self._parse_xiaomi_suggestions(text, search_url=search_url)
+        apps.extend(self._parse_xiaomi_detail_page(text, search_url=search_url))
+        apps.extend(self._parse_xiaomi_embedded_apps(text, search_url=search_url))
+        if apps:
+            unique_apps = _dedupe_listings(apps)
+            filtered = [app for app in unique_apps if _listing_matches_query(app, query)]
+            return [_with_rank(app, index) for index, app in enumerate(filtered[:limit], start=1)]
+        return super()._parse_search_page(text, query=query, search_url=search_url, limit=limit)
+
+    def _parse_xiaomi_suggestions(self, text: str, *, search_url: str) -> list[AppMarketListing]:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return []
+        suggestions = data.get("suggestion") if isinstance(data, dict) else None
+        if not isinstance(suggestions, list):
+            return []
+        apps: list[AppMarketListing] = []
+        for name in suggestions:
+            clean_name = str(name or "").strip()
+            if not clean_name:
+                continue
+            apps.append(
+                AppMarketListing(
+                    store=self.name,
+                    app_id=clean_name,
+                    name=clean_name,
+                    url=f"https://app.mi.com/search?keywords={quote_plus(clean_name)}",
+                    raw_metrics={"download_metric": "public_xiaomi_search_suggestion"},
+                )
+            )
+        return apps
+
+    def _parse_xiaomi_detail_page(self, text: str, *, search_url: str) -> list[AppMarketListing]:
+        if "app.mi.com/details" not in search_url and "appID" not in text and "包名" not in text:
+            return []
+        name = _clean_html_text(_first_regex(text, r'<div[^>]+class=["\']intro-titles["\'][^>]*>.*?<h3[^>]*>(.*?)</h3>'))
+        if not name:
+            name = _clean_html_text(_first_regex(text, r"<title>(.*?)-小米应用商店</title>"))
+        package_name = _xiaomi_detail_value(text, "包名")
+        app_id = _xiaomi_detail_value(text, "appID") or package_name or name
+        if not name or not app_id:
+            return []
+        category = _clean_html_text(_first_regex(text, r"<b>分类：</b>(.*?)<"))
+        rating_count = _optional_int(_first_regex(text, r"app-intro-comment[^>]*>\(\s*([0-9,]+)\s*次评分\s*\)"))
+        star_class = _first_regex(text, r"star1-hover\s+star1-([0-9]+)")
+        rating = None
+        if star_class:
+            rating = _optional_float(str(float(star_class) / 2))
+        return [
+            AppMarketListing(
+                store=self.name,
+                app_id=app_id,
+                name=name,
+                developer=_xiaomi_detail_value(text, "开发者"),
+                package_name=package_name,
+                category=category,
+                url=search_url,
+                rating=rating,
+                rating_count=rating_count,
+                raw_metrics={
+                    "download_metric": "public_xiaomi_detail_page",
+                    "size": _xiaomi_detail_value(text, "软件大小"),
+                    "version": _xiaomi_detail_value(text, "版本号"),
+                    "updated_at": _xiaomi_detail_value(text, "更新时间"),
+                },
+            )
+        ]
+
+    def _parse_xiaomi_embedded_apps(self, text: str, *, search_url: str) -> list[AppMarketListing]:
+        apps: list[AppMarketListing] = []
+        for variable in ("searchList", "featuredList", "hotList", "cloudList"):
+            for item in _json_array_assignment_items(text, variable):
+                name = str(item.get("displayName") or item.get("name") or "").strip()
+                package_name = str(item.get("packageName") or item.get("pkgName") or "").strip()
+                app_id = str(item.get("appId") or package_name or name).strip()
+                if not name or not app_id:
+                    continue
+                rating = _optional_float(item.get("ratingScore"))
+                if rating is not None and rating > 5:
+                    rating = rating / 2
+                apps.append(
+                    AppMarketListing(
+                        store=self.name,
+                        app_id=app_id,
+                        name=name,
+                        developer=str(item.get("publisherName") or ""),
+                        package_name=package_name,
+                        category=str(item.get("level2CategoryName") or item.get("level1CategoryName") or ""),
+                        url=f"https://app.mi.com/details?id={quote(package_name or app_id)}",
+                        rating=rating,
+                        rating_count=_optional_int(item.get("ratingTotalCount")),
+                        raw_metrics={
+                            "download_metric": "public_xiaomi_embedded_page",
+                            "size": item.get("apkSize"),
+                        },
+                    )
+                )
+        return apps
 
 
 class VivoAppStoreProvider(PublicHtmlAppStoreProvider):
@@ -415,10 +622,119 @@ class HuaweiAppGalleryProvider(PublicHtmlAppStoreProvider):
     display_name = "华为 AppGallery"
     base_url = "https://appgallery.huawei.com"
     search_url_templates = (
+        "https://wap1.hispace.hicloud.com/uowap/index?method=internal.completeSearchWord&serviceType=20&keyword={query}&zone=CN&locale=zh_CN&maxResults=25&reqPageNum=1&ver=1.1",
         "https://appgallery.huawei.com/search/{query}?locale=zh_CN",
         "https://appgallery.huawei.com/#/search/{query}",
     )
     detail_url_patterns = (r"appgallery\.huawei\.com/.*/app/", r"appgallery\.huawei\.com/app/")
+
+    def search(self, query: str, *, limit: int = 10) -> list[AppMarketListing]:
+        self.last_status = "no_match"
+        self.last_status_message = "未解析到匹配结果"
+        errors: list[str] = []
+        saw_spa_shell = False
+        for template in self.search_url_templates:
+            url = self._format_url(template, query)
+            try:
+                text = _get_text(url, self.timeout_seconds)
+            except Exception as exc:
+                errors.append(str(exc))
+                continue
+            saw_spa_shell = saw_spa_shell or _looks_like_huawei_spa_shell(text)
+            apps = self._parse_search_page(text, query=query, search_url=url, limit=limit)
+            if apps:
+                self.last_status = "ok"
+                self.last_status_message = ""
+                return apps
+        if errors and all(_is_public_page_not_found(error) for error in errors):
+            self.last_status = "skipped"
+            self.last_status_message = "公开搜索入口不可用，已跳过"
+            return []
+        if errors:
+            raise RuntimeError("; ".join(errors[:2]))
+        if saw_spa_shell:
+            self.last_status = "skipped"
+            self.last_status_message = "公开页面为 SPA 壳，静态请求未包含搜索结果"
+        return []
+
+    def _parse_search_page(
+        self,
+        text: str,
+        *,
+        query: str,
+        search_url: str,
+        limit: int,
+    ) -> list[AppMarketListing]:
+        apps = self._parse_huawei_json_apps(text, search_url=search_url)
+        if apps:
+            unique_apps = _dedupe_listings(apps)
+            filtered = [app for app in unique_apps if _listing_matches_query(app, query)]
+            return [_with_rank(app, index) for index, app in enumerate(filtered[:limit], start=1)]
+        return super()._parse_search_page(text, query=query, search_url=search_url, limit=limit)
+
+    def _parse_huawei_json_apps(self, text: str, *, search_url: str) -> list[AppMarketListing]:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return []
+
+        apps: list[AppMarketListing] = []
+        for item in _iter_json_objects(data):
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("appName") or item.get("displayName") or "").strip()
+            package_name = str(item.get("package") or item.get("packageName") or item.get("pkgName") or "").strip()
+            detail_id = str(item.get("detailId") or item.get("appId") or item.get("appid") or item.get("ID") or "").strip()
+            app_id = detail_id or package_name or name
+            if not name or not app_id:
+                continue
+            downloads_text = str(
+                item.get("downCountDesc")
+                or item.get("downloadCountDesc")
+                or item.get("installCount")
+                or item.get("downloadsText")
+                or ""
+            )
+            detail_url = f"https://appgallery.huawei.com/app/{quote(detail_id)}" if detail_id else search_url
+            apps.append(
+                AppMarketListing(
+                    store=self.name,
+                    app_id=app_id,
+                    name=name,
+                    developer=str(item.get("developer") or item.get("developerName") or item.get("publisherName") or ""),
+                    package_name=package_name,
+                    category=str(item.get("tagName") or item.get("categoryName") or item.get("category") or ""),
+                    url=detail_url,
+                    rating=_optional_float(item.get("score") or item.get("rating") or item.get("stars")),
+                    rating_count=_optional_int(item.get("commentCount") or item.get("scoreCount") or item.get("ratingCount")),
+                    downloads=_parse_download_count(downloads_text),
+                    downloads_text=downloads_text,
+                    raw_metrics={
+                        "download_metric": "public_huawei_appgallery_json",
+                        "intro": item.get("intro") or item.get("memo"),
+                    },
+                )
+            )
+        if apps:
+            return apps
+
+        suggestions = data.get("list") if isinstance(data, dict) else None
+        if not isinstance(suggestions, list):
+            return []
+        for value in suggestions:
+            name = str(value or "").strip()
+            if not name:
+                continue
+            apps.append(
+                AppMarketListing(
+                    store=self.name,
+                    app_id=name,
+                    name=name,
+                    url=f"https://appgallery.huawei.com/search/{quote(name)}?locale=zh_CN",
+                    raw_metrics={"download_metric": "public_huawei_search_suggestion"},
+                )
+            )
+        return apps
 
 
 class HonorAppMarketProvider(PublicHtmlAppStoreProvider):
@@ -672,6 +988,52 @@ def _app_id_from_url(url: str) -> str:
         if value:
             return value
     return ""
+
+
+def _xiaomi_detail_value(text: str, label: str) -> str:
+    pattern = (
+        r"<div[^>]*>\s*"
+        + re.escape(label)
+        + r"\s*</div>\s*<div[^>]*>\s*(.*?)\s*</div>"
+    )
+    return _clean_html_text(_first_regex(text, pattern))
+
+
+def _json_array_assignment_items(text: str, variable: str) -> list[JsonDict]:
+    match = re.search(r"\b(?:let|var|const)\s+" + re.escape(variable) + r"\s*=\s*(\[.*?\]);", text, flags=re.S)
+    if not match:
+        return []
+    try:
+        data = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return []
+    return [item for item in data if isinstance(item, dict)]
+
+
+def _looks_like_huawei_spa_shell(text: str) -> bool:
+    lowered = (text or "").lower()
+    return (
+        '<div id="app"></div>' in lowered
+        and "static/agweb" in lowered
+    )
+
+
+def _oppo_detail_url(package_name: str) -> str:
+    package_name = str(package_name or "").strip()
+    if not package_name:
+        return ""
+    params = urlencode(
+        {
+            "gb": "1",
+            "params": (
+                "enter_id=15"
+                f"&out_package_name={package_name}"
+                "&out_start_download=false"
+                "&enter_params=out_operator"
+            ),
+        }
+    )
+    return f"softmarket://market_appdetail?pn=com.oppo.market&{params}"
 
 
 def _first_regex(text: str, pattern: str) -> str:
