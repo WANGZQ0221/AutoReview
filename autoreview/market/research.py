@@ -71,16 +71,30 @@ class AppMarketSearcher:
         providers: list[AppStoreProvider] | None = None,
         *,
         timeout_seconds: int = 20,
+        market_data_config: JsonDict | None = None,
     ):
-        self.providers = providers or [
-            AppleAppStoreProvider(timeout_seconds=timeout_seconds),
-            GooglePlayProvider(timeout_seconds=timeout_seconds),
-            OppoAppMarketProvider(timeout_seconds=timeout_seconds),
-            XiaomiAppStoreProvider(timeout_seconds=timeout_seconds),
-            VivoAppStoreProvider(timeout_seconds=timeout_seconds),
-            HuaweiAppGalleryProvider(timeout_seconds=timeout_seconds),
-            HonorAppMarketProvider(timeout_seconds=timeout_seconds),
-        ]
+        if providers is not None:
+            self.providers = providers
+        else:
+            configured_providers: list[AppStoreProvider] = []
+            qimai_provider = QimaiDataProvider.from_config(market_data_config, timeout_seconds=timeout_seconds)
+            if qimai_provider:
+                configured_providers.append(qimai_provider)
+            appark_provider = ApparkDataProvider.from_config(market_data_config, timeout_seconds=timeout_seconds)
+            if appark_provider:
+                configured_providers.append(appark_provider)
+            configured_providers.extend(
+                [
+                    AppleAppStoreProvider(timeout_seconds=timeout_seconds),
+                    GooglePlayProvider(timeout_seconds=timeout_seconds),
+                    OppoAppMarketProvider(timeout_seconds=timeout_seconds),
+                    XiaomiAppStoreProvider(timeout_seconds=timeout_seconds),
+                    VivoAppStoreProvider(timeout_seconds=timeout_seconds),
+                    HuaweiAppGalleryProvider(timeout_seconds=timeout_seconds),
+                    HonorAppMarketProvider(timeout_seconds=timeout_seconds),
+                ]
+            )
+            self.providers = configured_providers
 
     def search_competitors(
         self,
@@ -118,6 +132,219 @@ class AppMarketSearcher:
                 )
         apps.sort(key=_listing_sort_key)
         return AppMarketSearchResult(query=clean_query, apps=apps[:limit], errors=errors, store_statuses=store_statuses)
+
+
+@dataclass(frozen=True)
+class QimaiDataSettings:
+    enabled: bool = False
+    base_url: str = ""
+    search_path: str = ""
+    search_url: str = ""
+    method: str = "GET"
+    api_key: str = ""
+    api_key_header: str = "Authorization"
+    api_key_prefix: str = "Bearer "
+    query_param: str = "keyword"
+    limit_param: str = "limit"
+    page_param: str = ""
+    page: int = 1
+    platform_param: str = ""
+    platform: str = ""
+    body_format: str = "json"
+    extra_headers: JsonDict = field(default_factory=dict)
+    extra_params: JsonDict = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, data: JsonDict | None) -> "QimaiDataSettings":
+        if not isinstance(data, dict):
+            return cls()
+        known = {field.name for field in cls.__dataclass_fields__.values()}
+        values = {key: value for key, value in data.items() if key in known}
+        if "headers" in data and "extra_headers" not in values:
+            values["extra_headers"] = data.get("headers")
+        if "params" in data and "extra_params" not in values:
+            values["extra_params"] = data.get("params")
+        return cls(**values)
+
+
+class QimaiDataProvider:
+    name = "qimai_data"
+    display_name = "七麦数据"
+
+    def __init__(self, settings: QimaiDataSettings, *, timeout_seconds: int = 20):
+        self.settings = settings
+        self.timeout_seconds = timeout_seconds
+
+    @classmethod
+    def from_config(cls, config: JsonDict | None, *, timeout_seconds: int = 20) -> "QimaiDataProvider | None":
+        if not isinstance(config, dict):
+            return None
+        qimai_config = config.get("qimai") if isinstance(config.get("qimai"), dict) else config
+        settings = QimaiDataSettings.from_mapping(qimai_config)
+        if not settings.enabled:
+            return None
+        if not (settings.search_url or (settings.base_url and settings.search_path)):
+            return None
+        return cls(settings, timeout_seconds=timeout_seconds)
+
+    def search(self, query: str, *, limit: int = 10) -> list[AppMarketListing]:
+        self.last_status = "no_match"
+        self.last_status_message = "未解析到匹配结果"
+        payload = self._request_search(query, limit=limit)
+        apps = self._parse_qimai_apps(payload, query=query, limit=limit)
+        if apps:
+            self.last_status = "ok"
+            self.last_status_message = ""
+        return apps
+
+    def _request_search(self, query: str, *, limit: int) -> JsonDict:
+        settings = self.settings
+        params = dict(settings.extra_params or {})
+        params[settings.query_param or "keyword"] = query
+        if settings.limit_param:
+            params[settings.limit_param] = str(limit)
+        if settings.page_param:
+            params[settings.page_param] = str(settings.page)
+        if settings.platform_param and settings.platform:
+            params[settings.platform_param] = settings.platform
+
+        url = settings.search_url or urljoin(settings.base_url.rstrip("/") + "/", settings.search_path.lstrip("/"))
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        headers.update({str(key): str(value) for key, value in (settings.extra_headers or {}).items()})
+        if settings.api_key:
+            headers[settings.api_key_header or "Authorization"] = f"{settings.api_key_prefix or ''}{settings.api_key}"
+
+        method = (settings.method or "GET").upper()
+        body: bytes | None = None
+        if method == "GET":
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}{urlencode(params)}"
+        else:
+            if (settings.body_format or "json").lower() == "form":
+                body = urlencode(params).encode("utf-8")
+                headers["Content-Type"] = "application/x-www-form-urlencoded"
+            else:
+                body = json.dumps(params, ensure_ascii=False).encode("utf-8")
+        return json.loads(_get_text(url, self.timeout_seconds, headers=headers, method=method, body=body))
+
+    def _parse_qimai_apps(self, payload: Any, *, query: str, limit: int) -> list[AppMarketListing]:
+        apps: list[AppMarketListing] = []
+        for item in _iter_qimai_app_items(payload):
+            app = _qimai_listing_from_item(item)
+            if not app:
+                continue
+            if _listing_matches_query(app, query):
+                apps.append(app)
+        return [_with_rank(app, index) for index, app in enumerate(_dedupe_listings(apps)[:limit], start=1)]
+
+
+@dataclass(frozen=True)
+class ApparkDataSettings:
+    enabled: bool = False
+    base_url: str = "https://appark.ai"
+    search_path: str = "/api/app/search"
+    search_url: str = ""
+    keyword_param: str = "keyword"
+    size_param: str = "size"
+    page_param: str = "page"
+    page: int = 1
+    country_param: str = "country"
+    country: str = "all"
+    platform_param: str = "platform"
+    platform: int | str = 0
+    extra_headers: JsonDict = field(default_factory=dict)
+    extra_params: JsonDict = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, data: JsonDict | None) -> "ApparkDataSettings":
+        if not isinstance(data, dict):
+            return cls()
+        known = {field.name for field in cls.__dataclass_fields__.values()}
+        values = {key: value for key, value in data.items() if key in known}
+        if "headers" in data and "extra_headers" not in values:
+            values["extra_headers"] = data.get("headers")
+        if "params" in data and "extra_params" not in values:
+            values["extra_params"] = data.get("params")
+        return cls(**values)
+
+
+class ApparkDataProvider:
+    name = "appark_data"
+    display_name = "Appark"
+
+    def __init__(self, settings: ApparkDataSettings, *, timeout_seconds: int = 20):
+        self.settings = settings
+        self.timeout_seconds = timeout_seconds
+
+    @classmethod
+    def from_config(cls, config: JsonDict | None, *, timeout_seconds: int = 20) -> "ApparkDataProvider | None":
+        if not isinstance(config, dict) or not isinstance(config.get("appark"), dict):
+            return None
+        settings = ApparkDataSettings.from_mapping(config.get("appark"))
+        if not settings.enabled:
+            return None
+        if not (settings.search_url or (settings.base_url and settings.search_path)):
+            return None
+        return cls(settings, timeout_seconds=timeout_seconds)
+
+    def search(self, query: str, *, limit: int = 10) -> list[AppMarketListing]:
+        self.last_status = "no_match"
+        self.last_status_message = "未解析到匹配结果"
+        payload = self._request_search(query, limit=limit)
+        apps = self._parse_appark_apps(payload, limit=limit)
+        if apps:
+            self.last_status = "ok"
+            self.last_status_message = ""
+        return apps
+
+    def _request_search(self, query: str, *, limit: int) -> JsonDict:
+        settings = self.settings
+        params = dict(settings.extra_params or {})
+        params[settings.keyword_param or "keyword"] = query
+        params[settings.size_param or "size"] = str(max(limit, 1))
+        params[settings.page_param or "page"] = str(settings.page)
+        params[settings.country_param or "country"] = settings.country
+        params[settings.platform_param or "platform"] = str(settings.platform)
+
+        url = settings.search_url or urljoin(settings.base_url.rstrip("/") + "/", settings.search_path.lstrip("/"))
+        separator = "&" if "?" in url else "?"
+        url = f"{url}{separator}{urlencode(params)}"
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Referer": f"{settings.base_url.rstrip('/')}/cn/advanced-search",
+            "Origin": settings.base_url.rstrip("/"),
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+        }
+        headers.update({str(key): str(value) for key, value in (settings.extra_headers or {}).items()})
+        return json.loads(_get_text(url, self.timeout_seconds, headers=headers))
+
+    def _parse_appark_apps(self, payload: Any, *, limit: int) -> list[AppMarketListing]:
+        if not isinstance(payload, dict):
+            return []
+        code = payload.get("code")
+        if code not in (None, 100000, "100000"):
+            raise RuntimeError(str(payload.get("message") or f"Appark 返回异常 code={code}"))
+        items = payload.get("data")
+        if isinstance(items, dict):
+            items = items.get("list") or items.get("items") or items.get("data")
+        if not isinstance(items, list):
+            return []
+
+        apps: list[AppMarketListing] = []
+        for index, item in enumerate(items, start=1):
+            if not isinstance(item, dict):
+                continue
+            app = _appark_listing_from_item(item, fallback_rank=index)
+            if app:
+                apps.append(app)
+        return [_with_rank(app, index) for index, app in enumerate(_dedupe_listings(apps)[:limit], start=1)]
 
 
 class AppleAppStoreProvider:
@@ -790,17 +1017,29 @@ def build_monthly_snapshot(
     }
 
 
-def _get_json(url: str, timeout_seconds: int) -> JsonDict:
-    return json.loads(_get_text(url, timeout_seconds))
+def _get_json(url: str, timeout_seconds: int, *, headers: JsonDict | None = None) -> JsonDict:
+    return json.loads(_get_text(url, timeout_seconds, headers=headers))
 
 
-def _get_text(url: str, timeout_seconds: int) -> str:
+def _get_text(
+    url: str,
+    timeout_seconds: int,
+    *,
+    headers: JsonDict | None = None,
+    method: str = "GET",
+    body: bytes | None = None,
+) -> str:
+    merged_headers = {
+        "Accept": "application/json,text/html,*/*",
+        "User-Agent": "AutoReview/1.0 (+https://example.invalid/autoreview)",
+    }
+    if headers:
+        merged_headers.update({str(key): str(value) for key, value in headers.items()})
     request = Request(
         url,
-        headers={
-            "Accept": "application/json,text/html,*/*",
-            "User-Agent": "AutoReview/1.0 (+https://example.invalid/autoreview)",
-        },
+        headers=merged_headers,
+        method=method,
+        data=body,
     )
     with urlopen(request, timeout=timeout_seconds) as response:
         return response.read().decode("utf-8", errors="replace")
@@ -944,6 +1183,34 @@ def _iter_json_objects(value: Any):
             yield from _iter_json_objects(item)
 
 
+def _iter_qimai_app_items(value: Any):
+    if isinstance(value, dict):
+        preferred_keys = (
+            "apps",
+            "app_list",
+            "appList",
+            "list",
+            "result",
+            "results",
+            "data",
+            "items",
+            "records",
+        )
+        for key in preferred_keys:
+            items = value.get(key)
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        yield item
+        for item in value.values():
+            yield from _iter_qimai_app_items(item)
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                yield item
+                yield from _iter_qimai_app_items(item)
+
+
 def _clean_html_text(value: str) -> str:
     text = re.sub(r"<script\b.*?</script>", "", value or "", flags=re.S | re.I)
     text = re.sub(r"<style\b.*?</style>", "", text, flags=re.S | re.I)
@@ -1015,6 +1282,135 @@ def _looks_like_huawei_spa_shell(text: str) -> bool:
     return (
         '<div id="app"></div>' in lowered
         and "static/agweb" in lowered
+    )
+
+
+def _qimai_listing_from_item(item: JsonDict) -> AppMarketListing | None:
+    name = str(
+        item.get("appName")
+        or item.get("name")
+        or item.get("trackName")
+        or item.get("title")
+        or ""
+    ).strip()
+    app_id = str(
+        item.get("appId")
+        or item.get("id")
+        or item.get("trackId")
+        or item.get("appID")
+        or item.get("package")
+        or item.get("bundleId")
+        or ""
+    ).strip()
+    package_name = str(item.get("packageName") or item.get("package") or item.get("bundleId") or "").strip()
+    if not name or not (app_id or package_name):
+        return None
+
+    downloads_text = str(
+        item.get("downloadCount")
+        or item.get("downloads")
+        or item.get("download_count")
+        or item.get("downloadCountText")
+        or item.get("downloadsText")
+        or item.get("installCount")
+        or ""
+    ).strip()
+    developer = str(
+        item.get("publisher")
+        or item.get("publisherName")
+        or item.get("developer")
+        or item.get("developerName")
+        or item.get("sellerName")
+        or ""
+    ).strip()
+    category = str(
+        item.get("category")
+        or item.get("categoryName")
+        or item.get("genre")
+        or item.get("primaryGenreName")
+        or ""
+    ).strip()
+    store = str(item.get("store") or item.get("platform") or "qimai_data").strip().lower()
+    if store in {"ios", "appstore", "apple", "apple_app_store"}:
+        store = "apple_app_store"
+    elif store in {"googleplay", "google_play", "gp"}:
+        store = "google_play"
+    elif store in {"oppo", "oppo_app_market"}:
+        store = "oppo_app_market"
+    elif store in {"xiaomi", "xiaomi_app_store", "mi"}:
+        store = "xiaomi_app_store"
+    elif store in {"vivo", "vivo_app_store"}:
+        store = "vivo_app_store"
+    elif store in {"huawei", "huawei_appgallery", "appgallery"}:
+        store = "huawei_appgallery"
+    elif store in {"honor", "honor_app_market"}:
+        store = "honor_app_market"
+    else:
+        store = "qimai_data"
+
+    return AppMarketListing(
+        store=store,
+        app_id=app_id or package_name,
+        name=name,
+        developer=developer,
+        package_name=package_name,
+        category=category,
+        url=str(item.get("url") or item.get("trackViewUrl") or item.get("appUrl") or ""),
+        rating=_optional_float(item.get("rating") or item.get("score") or item.get("averageUserRating")),
+        rating_count=_optional_int(item.get("ratingCount") or item.get("commentCount") or item.get("userRatingCount")),
+        downloads=_parse_download_count(downloads_text) or _optional_int(item.get("downloadCountValue")),
+        downloads_text=downloads_text,
+        raw_metrics={
+            "download_metric": "qimai_data_api",
+            "source_platform": item.get("platform") or item.get("store") or "qimai",
+        },
+    )
+
+
+def _appark_listing_from_item(item: JsonDict, *, fallback_rank: int) -> AppMarketListing | None:
+    name = str(item.get("app_name") or item.get("appName") or item.get("name") or "").strip()
+    app_id = str(item.get("app_id") or item.get("appId") or item.get("id") or item.get("cluster_id") or "").strip()
+    if not name or not app_id:
+        return None
+    platform = item.get("platform")
+    store = "appark_data"
+    if platform in (1, "1", "ios", "apple"):
+        store = "apple_app_store"
+    elif platform in (2, "2", "android", "google_play", "googleplay"):
+        store = "google_play"
+
+    downloads = _optional_int(item.get("downloads"))
+    downloads_text = str(item.get("downloads_text") or "").strip()
+    category = str(item.get("category") or item.get("category_name") or item.get("categoryName") or "").strip()
+    url = str(item.get("url") or "").strip()
+    if not url:
+        if store == "apple_app_store":
+            url = f"https://apps.apple.com/app/id{app_id}"
+        elif store == "google_play":
+            url = f"https://play.google.com/store/apps/details?id={quote_plus(app_id)}"
+    return AppMarketListing(
+        store=store,
+        app_id=app_id,
+        name=name,
+        developer=str(item.get("developer_name") or item.get("developerName") or item.get("developer") or "").strip(),
+        package_name=app_id if store == "google_play" else "",
+        category=category,
+        url=url,
+        rating=_optional_float(item.get("rating") or item.get("score")),
+        rating_count=_optional_int(item.get("rating_count") or item.get("ratingCount")),
+        downloads=downloads,
+        downloads_text=downloads_text,
+        rank=_optional_int(item.get("rank")) or fallback_rank,
+        raw_metrics={
+            "download_metric": "appark_advanced_search",
+            "source_platform": platform,
+            "cluster_id": item.get("cluster_id"),
+            "country": item.get("country"),
+            "publish_store": item.get("publish_store"),
+            "revenue": item.get("revenue"),
+            "release_date": item.get("release_date"),
+            "tags": item.get("tags"),
+        },
     )
 
 

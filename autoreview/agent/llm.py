@@ -124,14 +124,20 @@ def _build_user_prompt(message: str, session: JsonDict) -> str:
         default_config = session_context.get("default_config") or {}
         preferences = session_context.get("preferences") or {}
         supported_market_stores = session_context.get("supported_market_stores") or []
+        recent_conversation = session_context.get("recent_conversation") or []
+        long_term_memory = session_context.get("long_term_memory") or {}
     else:
         compact_session = _compact_session(session_context)
         default_config = {}
         preferences = {}
         supported_market_stores = []
+        recent_conversation = []
+        long_term_memory = {}
     context = {
         "message": message,
         "session": compact_session,
+        "recent_conversation": recent_conversation[-20:],
+        "long_term_memory": long_term_memory,
         "default_config": default_config,
         "preferences": preferences,
         "supported_market_stores": supported_market_stores,
@@ -143,6 +149,8 @@ def _compact_session(session: JsonDict) -> JsonDict:
     return {
         "app_info": session.get("app_info") or {},
         "agent_memory": session.get("agent_memory") or [],
+        "long_term_memory": session.get("long_term_memory") or {},
+        "conversation_history": (session.get("conversation_history") or [])[-20:],
         "market_store_preferences": session.get("market_store_preferences") or {},
         "last_rejection_analysis": session.get("last_rejection_analysis") or {},
         "last_market_search": session.get("last_market_search") or {},
@@ -196,7 +204,8 @@ _SYSTEM_PROMPT = """你是 AutoReview 的飞书协作 agent，项目目标是自
   "disable_stores": ["要在当前会话排除的商店 id，例如 google_play"],
   "enable_stores": ["要在当前会话恢复查询的商店 id，例如 google_play"],
   "app_info": {"app_name":"","pkg_name":"","version_code":""},
-  "memories": ["需要长期记住的事实或偏好"],
+  "preferences": {"结构化偏好键": "结构化偏好值，可空"},
+  "memories": ["需要长期记住的事实或偏好，优先短句；也可输出 {category,text} 对象"],
   "reply": "chat/unknown 时给用户的简短中文回复"
 }
 
@@ -206,6 +215,8 @@ _SYSTEM_PROMPT = """你是 AutoReview 的飞书协作 agent，项目目标是自
 - 用户要求最终提交/上架时，优先识别为 submission_check 或 submit_checklist，让本地工具先检查。
 - 用户要求“默认不查/以后不查/恢复查询某应用商店”时，识别为 market_store_preference，并使用 supported_market_stores 里的 store id。
 - 生成 market_search 或 market_download_snapshot 时，要结合 preferences.market_stores，不要建议查询当前会话已排除的商店。
+- 判断用户意图时参考 recent_conversation 最近 20 条会话和 long_term_memory 结构化长期记忆。
+- 需要长期保留的信息放入 memories 或 preferences；提交所需结构化数据放入 app_info/config_assignment 等对应字段。
 - market_search 只用于“到应用商店里查同类 APP/游戏”。如果用户问“类似七麦/点点数据/蝉大师/Sensor Tower/data.ai 的第三方数据平台、ASO 平台、应用商店统计数据平台”，这是行业资料调研，不是应用商店竞品搜索；识别为 chat，并直接给出简短平台清单或说明需要网页搜索。
 - 回答和命令判断要参考 default_config 和 session；不要把用户偏好写入默认配置。
 - 如果缺关键信息，intent 可保持目标意图，同时 reply 提示补充。

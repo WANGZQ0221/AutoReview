@@ -637,12 +637,14 @@ cd D:\development_sercer\AutoReview
 - 上传到飞书的原始文件会保存到 `data/feishu_uploads/`。
 - `记录竞品下载` 会在会话状态的 `market_download_snapshots` 中按 `YYYY-MM` 保存月度快照。多数商店不公开精确下载量，且公开搜索页结构可能变化；AutoReview 会尽力解析公开可见的下载量文本、评分和评分数，不公开或解析不到的字段会留空。OPPO / vivo 等公开搜索入口不可用时会自动跳过，不再把 404 暴露给飞书用户。
 - 竞品搜索回复会包含“已查询”概况，说明每个商店是返回了多少结果、未解析到匹配结果、公开入口不可用跳过，还是查询超时/失败。
+- 七麦、Appark 等第三方应用数据平台配置独立放在 `market_data.json`，不要放进 OPPO 提交配置。可参考 `config/market_data.example.json`；启用 `qimai.enabled` / `appark.enabled` 后，竞品搜索会优先查询第三方数据平台，再回退到 Apple / Google Play / 国内安卓公开入口。七麦的真实接口路径、鉴权头和参数名以商务开通文档为准；Appark 当前使用网页高级搜索同款公开接口模拟，可能受登录、权限或频率限制影响，所以默认关闭。
 
 ## 多渠道配置模板
 
 已提供：
 
 - `config/oppo_submission.example.json`
+- `config/market_data.example.json`
 - `config/xiaomi_submission.example.json`
 - `config/honor_submission.example.json`
 - `config/vivo_submission.example.json`

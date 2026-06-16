@@ -3,9 +3,11 @@ from unittest.mock import patch
 
 from autoreview.market.research import (
     AppMarketSearcher,
+    ApparkDataProvider,
     HuaweiAppGalleryProvider,
     OppoAppMarketProvider,
     PublicHtmlAppStoreProvider,
+    QimaiDataProvider,
     XiaomiAppStoreProvider,
     _listing_matches_query,
     _parse_download_count,
@@ -37,6 +39,39 @@ class MarketResearchTest(unittest.TestCase):
         self.assertIn("vivo_app_store", names)
         self.assertIn("huawei_appgallery", names)
         self.assertIn("honor_app_market", names)
+
+    def test_configured_searcher_includes_qimai_data_first(self):
+        searcher = AppMarketSearcher(
+            market_data_config={
+                "qimai": {
+                    "enabled": True,
+                    "base_url": "https://qimai.example",
+                    "search_path": "/apps/search",
+                    "api_key": "secret",
+                }
+            }
+        )
+
+        self.assertEqual(searcher.providers[0].name, "qimai_data")
+
+    def test_configured_searcher_includes_appark_after_qimai(self):
+        searcher = AppMarketSearcher(
+            market_data_config={
+                "qimai": {
+                    "enabled": True,
+                    "base_url": "https://qimai.example",
+                    "search_path": "/apps/search",
+                },
+                "appark": {
+                    "enabled": True,
+                    "base_url": "https://appark.ai",
+                    "search_path": "/api/app/search",
+                },
+            }
+        )
+
+        self.assertEqual(searcher.providers[0].name, "qimai_data")
+        self.assertEqual(searcher.providers[1].name, "appark_data")
 
     def test_searcher_rejects_punctuation_only_query(self):
         searcher = AppMarketSearcher(providers=[FakeDomesticProvider()])
@@ -153,6 +188,127 @@ class MarketResearchTest(unittest.TestCase):
 
         self.assertEqual(provider.name, "oppo_app_market")
         self.assertTrue(provider.search_url_templates)
+
+    def test_qimai_provider_parses_common_api_shapes(self):
+        provider = QimaiDataProvider.from_config(
+            {
+                "enabled": True,
+                "base_url": "https://qimai.example",
+                "search_path": "/apps/search",
+                "api_key": "secret",
+            }
+        )
+        self.assertIsNotNone(provider)
+        payload = {
+            "data": {
+                "list": [
+                    {
+                        "appId": "698570469",
+                        "appName": "不背单词-四六级考研等英语单词学习",
+                        "publisherName": "Beijing Is-Cool Technology Co., Ltd",
+                        "categoryName": "Education",
+                        "platform": "ios",
+                        "downloadCount": "123万",
+                        "rating": "4.8",
+                        "ratingCount": "423076",
+                        "bundleId": "cn.com.langeasy.LangEasyLexis",
+                    }
+                ]
+            }
+        }
+
+        apps = provider._parse_qimai_apps(payload, query="单词", limit=5)
+
+        self.assertEqual(len(apps), 1)
+        self.assertEqual(apps[0].store, "apple_app_store")
+        self.assertEqual(apps[0].app_id, "698570469")
+        self.assertEqual(apps[0].package_name, "cn.com.langeasy.LangEasyLexis")
+        self.assertEqual(apps[0].downloads, 1230000)
+        self.assertEqual(apps[0].rating_count, 423076)
+        self.assertEqual(apps[0].raw_metrics["download_metric"], "qimai_data_api")
+
+    def test_qimai_provider_builds_configurable_get_request(self):
+        provider = QimaiDataProvider.from_config(
+            {
+                "enabled": True,
+                "base_url": "https://qimai.example",
+                "search_path": "/apps/search",
+                "api_key": "secret",
+                "api_key_header": "X-API-Key",
+                "api_key_prefix": "",
+                "query_param": "kw",
+                "limit_param": "size",
+                "page_param": "page",
+                "params": {"market": "cn"},
+            }
+        )
+
+        with patch("autoreview.market.research._get_text", return_value='{"data":{"list":[]}}') as get_text:
+            provider.search("单词", limit=8)
+
+        url = get_text.call_args.args[0]
+        kwargs = get_text.call_args.kwargs
+        self.assertIn("kw=%E5%8D%95%E8%AF%8D", url)
+        self.assertIn("size=8", url)
+        self.assertIn("market=cn", url)
+        self.assertEqual(kwargs["headers"]["X-API-Key"], "secret")
+
+    def test_appark_provider_builds_advanced_search_request(self):
+        provider = ApparkDataProvider.from_config(
+            {
+                "appark": {
+                    "enabled": True,
+                    "base_url": "https://appark.ai",
+                    "search_path": "/api/app/search",
+                    "country": "all",
+                    "platform": 0,
+                }
+            }
+        )
+
+        with patch("autoreview.market.research._get_text", return_value='{"code":100000,"data":[]}') as get_text:
+            provider.search("单词", limit=8)
+
+        url = get_text.call_args.args[0]
+        kwargs = get_text.call_args.kwargs
+        self.assertIn("keyword=%E5%8D%95%E8%AF%8D", url)
+        self.assertIn("size=8", url)
+        self.assertIn("country=all", url)
+        self.assertIn("platform=0", url)
+        self.assertIn("advanced-search", kwargs["headers"]["Referer"])
+
+    def test_appark_provider_parses_advanced_search_payload(self):
+        provider = ApparkDataProvider.from_config({"appark": {"enabled": True}})
+        self.assertIsNotNone(provider)
+        payload = {
+            "code": 100000,
+            "total_page": 12,
+            "data": [
+                {
+                    "app_id": "6462759069",
+                    "app_name": "单词鸭-消消乐方式学单词",
+                    "developer_name": "JingKui",
+                    "country": "us",
+                    "platform": 1,
+                    "cluster_id": "cluster-1",
+                    "publish_store": [1],
+                    "release_date": "2023-08-25",
+                    "downloads": 7959,
+                    "revenue": 1023,
+                    "rank": 5,
+                }
+            ],
+        }
+
+        apps = provider._parse_appark_apps(payload, limit=5)
+
+        self.assertEqual(len(apps), 1)
+        self.assertEqual(apps[0].store, "apple_app_store")
+        self.assertEqual(apps[0].app_id, "6462759069")
+        self.assertEqual(apps[0].developer, "JingKui")
+        self.assertEqual(apps[0].downloads, 7959)
+        self.assertEqual(apps[0].raw_metrics["download_metric"], "appark_advanced_search")
+        self.assertEqual(apps[0].raw_metrics["revenue"], 1023)
 
     def test_oppo_provider_parses_public_json_listing(self):
         provider = OppoAppMarketProvider()

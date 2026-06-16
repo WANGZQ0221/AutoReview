@@ -10,6 +10,7 @@ from pathlib import Path
 from dataclasses import dataclass
 import json
 import re
+import time
 from typing import Any, Callable
 
 from autoreview.market import AppMarketSearchResult, AppMarketSearcher, build_monthly_snapshot
@@ -62,12 +63,14 @@ class ReviewAgent:
         state_store: JsonStateStore,
         *,
         oppo_config_path: str | Path | None = None,
+        market_data_config_path: str | Path | None = None,
         oppo_agent_factory: Callable[[], Any] | None = None,
         market_searcher_factory: Callable[[], Any] | None = None,
         llm_client: Any | None = None,
     ):
         self.state_store = state_store
         self.oppo_config_path = Path(oppo_config_path) if oppo_config_path else None
+        self.market_data_config_path = Path(market_data_config_path) if market_data_config_path else None
         self.oppo_agent_factory = oppo_agent_factory
         self.market_searcher_factory = market_searcher_factory
         self.llm_client = llm_client
@@ -75,8 +78,16 @@ class ReviewAgent:
     def handle_message(self, session_id: str, text: str, sender_id: str | None = None) -> AgentResponse:
         clean_text = self._normalize_incoming_text(text)
         if not clean_text:
-            return AgentResponse("我收到空消息了。发送“帮助”可以查看可用指令。", {})
+            response = AgentResponse("我收到空消息了。发送“帮助”可以查看可用指令。", {})
+            self._record_conversation_turn(session_id, "", response, sender_id=sender_id)
+            return response
 
+        response = self._handle_message_logic(session_id, clean_text, sender_id=sender_id)
+        if response.data.get("intent") not in {"clear_session_state", "clear_all_state"}:
+            self._record_conversation_turn(session_id, clean_text, response, sender_id=sender_id)
+        return response
+
+    def _handle_message_logic(self, session_id: str, clean_text: str, sender_id: str | None = None) -> AgentResponse:
         llm_decision = self._interpret_with_llm(session_id, clean_text, sender_id=sender_id)
         if self._should_apply_llm_before_rules(clean_text):
             llm_response = self._response_from_llm_decision(
@@ -768,6 +779,8 @@ class ReviewAgent:
         session = self.state_store.get_session(session_id)
         return {
             "session": session,
+            "recent_conversation": session.get("conversation_history") or [],
+            "long_term_memory": self._structured_long_term_memory(session_id),
             "default_config": {
                 "app_info": self._config_app_info(),
                 "image_analysis": {
@@ -909,19 +922,135 @@ class ReviewAgent:
         decision: JsonDict,
         sender_id: str | None = None,
     ) -> None:
-        memories = [str(item).strip() for item in decision.get("memories") or [] if str(item).strip()]
-        if not memories:
+        memory_patch = self._memory_patch_from_decision(decision)
+        if not memory_patch:
             return
         session = self.state_store.get_session(session_id)
         existing = [str(item).strip() for item in session.get("agent_memory") or [] if str(item).strip()]
+        structured = self._structured_long_term_memory(session_id)
+        memories = memory_patch.get("notes") or []
         merged = existing[:]
         for item in memories:
             if item not in merged:
                 merged.append(item)
+        for item in memory_patch.get("notes") or []:
+            if item not in structured["notes"]:
+                structured["notes"].append(item)
+        structured["notes"] = structured["notes"][-30:]
+
+        app_info = memory_patch.get("app_info") or {}
+        if app_info:
+            structured["app_info"].update({key: value for key, value in app_info.items() if value})
+
+        preferences = memory_patch.get("preferences") or {}
+        if preferences:
+            structured["preferences"].update(preferences)
+
+        submission = memory_patch.get("submission") or {}
+        if submission:
+            structured["submission"].update(submission)
+
         self.state_store.update_session(
             session_id,
             {
                 "agent_memory": merged[-30:],
+                "long_term_memory": structured,
+                "sender_id": sender_id,
+            },
+        )
+
+    def _structured_long_term_memory(self, session_id: str) -> JsonDict:
+        session = self.state_store.get_session(session_id)
+        raw = session.get("long_term_memory") or {}
+        memory = {
+            "notes": [str(item).strip() for item in raw.get("notes") or [] if str(item).strip()],
+            "app_info": dict(raw.get("app_info") or {}),
+            "submission": dict(raw.get("submission") or {}),
+            "preferences": dict(raw.get("preferences") or {}),
+        }
+        for item in session.get("agent_memory") or []:
+            note = str(item).strip()
+            if note and note not in memory["notes"]:
+                memory["notes"].append(note)
+        session_app = session.get("app_info") or {}
+        if session_app:
+            memory["app_info"].update({key: value for key, value in session_app.items() if value})
+        market_preferences = self._market_store_preferences(session_id)
+        if market_preferences.get("disabled_stores"):
+            memory["preferences"]["market_stores"] = market_preferences
+        return memory
+
+    @staticmethod
+    def _memory_patch_from_decision(decision: JsonDict) -> JsonDict:
+        patch: JsonDict = {}
+        notes: list[str] = []
+        for item in decision.get("memories") or []:
+            if isinstance(item, dict):
+                note = str(item.get("text") or item.get("note") or "").strip()
+                category = str(item.get("category") or "").strip()
+                if note:
+                    notes.append(f"{category}: {note}" if category else note)
+            else:
+                note = str(item).strip()
+                if note:
+                    notes.append(note)
+        if notes:
+            patch["notes"] = notes
+
+        app_info = decision.get("app_info") if isinstance(decision.get("app_info"), dict) else {}
+        app_info = {
+            "app_name": str(app_info.get("app_name") or "").strip(),
+            "pkg_name": str(app_info.get("pkg_name") or "").strip(),
+            "version_code": str(app_info.get("version_code") or "").strip(),
+        }
+        app_info = {key: value for key, value in app_info.items() if value}
+        if app_info:
+            patch["app_info"] = app_info
+
+        preferences: JsonDict = {}
+        disable_stores = _normalize_store_list(decision.get("disable_stores") or decision.get("disabled_stores"))
+        enable_stores = _normalize_store_list(decision.get("enable_stores") or decision.get("enabled_stores"))
+        if disable_stores or enable_stores:
+            preferences["market_stores"] = {
+                "disable_stores": disable_stores,
+                "enable_stores": enable_stores,
+            }
+        raw_preferences = decision.get("preferences")
+        if isinstance(raw_preferences, dict):
+            preferences.update(raw_preferences)
+        if preferences:
+            patch["preferences"] = preferences
+
+        submission: JsonDict = {}
+        config_assignment = str(decision.get("config_assignment") or "").strip()
+        if config_assignment:
+            submission["pending_config_assignment"] = config_assignment
+        if submission:
+            patch["submission"] = submission
+        return patch
+
+    def _record_conversation_turn(
+        self,
+        session_id: str,
+        user_text: str,
+        response: AgentResponse,
+        sender_id: str | None = None,
+    ) -> None:
+        session = self.state_store.get_session(session_id)
+        history = list(session.get("conversation_history") or [])
+        history.append(
+            {
+                "ts": int(time.time()),
+                "sender_id": sender_id or "",
+                "user": _shorten(user_text, 500),
+                "assistant": _shorten(response.text, 800),
+                "intent": str(response.data.get("intent") or ""),
+            }
+        )
+        self.state_store.update_session(
+            session_id,
+            {
+                "conversation_history": history[-20:],
                 "sender_id": sender_id,
             },
         )
@@ -957,7 +1086,7 @@ class ReviewAgent:
     def _make_market_searcher(self) -> Any:
         if self.market_searcher_factory:
             return self.market_searcher_factory()
-        return AppMarketSearcher()
+        return AppMarketSearcher(market_data_config=self._market_data_config())
 
     def _search_markets(self, session_id: str, query: str, *, limit: int) -> Any:
         stores = self._allowed_market_stores(session_id)
@@ -1029,10 +1158,15 @@ class ReviewAgent:
         for store in enable_stores:
             disabled.discard(store)
         updated = {"disabled_stores": sorted(disabled)}
+        memory = self._structured_long_term_memory(session_id)
+        memory_preferences = dict(memory.get("preferences") or {})
+        memory_preferences["market_stores"] = updated
+        memory["preferences"] = memory_preferences
         self.state_store.update_session(
             session_id,
             {
                 "market_store_preferences": updated,
+                "long_term_memory": memory,
                 "sender_id": sender_id,
             },
         )
@@ -1090,6 +1224,15 @@ class ReviewAgent:
             "pkg_name": str(submission.get("pkg_name") or "").strip(),
             "version_code": str(submission.get("version_code") or ""),
         }
+
+    def _market_data_config(self) -> JsonDict:
+        if not self.market_data_config_path or not self.market_data_config_path.exists():
+            return {}
+        try:
+            raw = json.loads(self.market_data_config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+        return raw if isinstance(raw, dict) else {}
 
     def analyze_rejection_text(
         self,
@@ -1466,7 +1609,11 @@ class ReviewAgent:
         disabled_stores = [_store_label(store) for store in preferences.get("disabled_stores") or []]
         preference_line = f"\n- 应用商店偏好：不查询 {'、'.join(disabled_stores)}" if disabled_stores else ""
         memory = session.get("agent_memory") or []
-        memory_line = f"\n- 长期记忆：{len(memory)} 条" if memory else ""
+        structured_memory = session.get("long_term_memory") or {}
+        memory_count = len(memory) or len(structured_memory.get("notes") or [])
+        preference_count = len((structured_memory.get("preferences") or {}))
+        memory_line = f"\n- 长期记忆：{memory_count} 条" if memory_count else ""
+        structured_line = f"\n- 结构化偏好：{preference_count} 类" if preference_count else ""
         return (
             "当前会话状态：\n"
             f"- 应用名：{app_info.get('app_name') or '未记录'}\n"
@@ -1480,6 +1627,7 @@ class ReviewAgent:
             f"{snapshot_line}"
             f"{preference_line}"
             f"{memory_line}"
+            f"{structured_line}"
         )
 
     @staticmethod
@@ -1693,6 +1841,8 @@ def _material_name(material_type: Any, index: Any = None) -> str:
 
 
 SUPPORTED_MARKET_STORES = (
+    ("qimai_data", "七麦数据"),
+    ("appark_data", "Appark"),
     ("apple_app_store", "Apple App Store"),
     ("google_play", "Google Play"),
     ("oppo_app_market", "OPPO 软件商店"),
@@ -1724,6 +1874,8 @@ def _format_supported_market_stores(disabled_stores: set[str] | None = None) -> 
 def _extract_market_store_name(text: str) -> str:
     lowered = str(text or "").lower()
     aliases = {
+        "qimai_data": ("qimai", "七麦", "七麦数据"),
+        "appark_data": ("appark", "appmark", "appark.ai"),
         "apple_app_store": ("apple app store", "app store", "苹果", "ios"),
         "google_play": ("google play", "google", "play商店", "谷歌"),
         "oppo_app_market": ("oppo", "欢太", "heytap"),

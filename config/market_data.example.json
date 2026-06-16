@@ -1,0 +1,35 @@
+{
+  "qimai": {
+    "enabled": false,
+    "base_url": "填写七麦 API base_url，例如 https://api.example.qimai.cn",
+    "search_path": "填写七麦竞品搜索接口路径，例如 /apps/search",
+    "method": "GET",
+    "api_key": "填写七麦 API Key；不开启可留空",
+    "api_key_header": "Authorization",
+    "api_key_prefix": "Bearer ",
+    "query_param": "keyword",
+    "limit_param": "limit",
+    "page_param": "page",
+    "page": 1,
+    "platform_param": "",
+    "platform": "",
+    "body_format": "json",
+    "headers": {},
+    "params": {}
+  },
+  "appark": {
+    "enabled": false,
+    "base_url": "https://appark.ai",
+    "search_path": "/api/app/search",
+    "keyword_param": "keyword",
+    "size_param": "size",
+    "page_param": "page",
+    "page": 1,
+    "country_param": "country",
+    "country": "all",
+    "platform_param": "platform",
+    "platform": 0,
+    "headers": {},
+    "params": {}
+  }
+}

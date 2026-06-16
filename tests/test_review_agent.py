@@ -598,6 +598,82 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertNotIn("google_play", searcher.calls[-1]["stores"])
             self.assertIn("apple_app_store", searcher.calls[-1]["stores"])
 
+    def test_market_searcher_reads_qimai_config_from_separate_market_data_file(self):
+        captured = {}
+
+        class CapturingSearcher:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            def search_competitors(self, query, limit=8, stores=None):
+                return AppMarketSearchResult(
+                    query=query,
+                    apps=[],
+                    store_statuses=[],
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            market_data_path = base_dir / "market_data.json"
+            market_data_path.write_text(
+                json.dumps(
+                    {
+                        "qimai": {
+                            "enabled": True,
+                            "base_url": "https://qimai.example",
+                            "search_path": "/apps/search",
+                            "api_key": "secret",
+                        }
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            agent = ReviewAgent(
+                JsonStateStore(base_dir / "state.json"),
+                oppo_config_path=config_path,
+                market_data_config_path=market_data_path,
+            )
+
+            with patch("autoreview.agent.review_agent.AppMarketSearcher", CapturingSearcher):
+                agent.handle_message("chat-1", "搜索竞品：英语四级单词")
+
+        self.assertEqual(captured["market_data_config"]["qimai"]["base_url"], "https://qimai.example")
+
+    def test_market_searcher_does_not_read_qimai_config_from_submission_config(self):
+        captured = {}
+
+        class CapturingSearcher:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            def search_competitors(self, query, limit=8, stores=None):
+                return AppMarketSearchResult(query=query, apps=[], store_statuses=[])
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+            raw["market_data"] = {
+                "qimai": {
+                    "enabled": True,
+                    "base_url": "https://wrong-place.example",
+                    "search_path": "/apps/search",
+                }
+            }
+            config_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+            agent = ReviewAgent(
+                JsonStateStore(base_dir / "state.json"),
+                oppo_config_path=config_path,
+            )
+
+            with patch("autoreview.agent.review_agent.AppMarketSearcher", CapturingSearcher):
+                agent.handle_message("chat-1", "搜索竞品：英语四级单词")
+
+        self.assertEqual(captured["market_data_config"], {})
+
     def test_image_capability_questions_use_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = self._write_minimal_config(Path(temp_dir))
@@ -720,7 +796,9 @@ class ReviewAgentTest(unittest.TestCase):
                 {
                     "intent": "remember",
                     "confidence": 0.9,
-                    "memories": ["默认应用是英语四级单词"],
+                    "memories": [{"category": "default_app", "text": "默认应用是英语四级单词"}],
+                    "app_info": {"app_name": "英语四级单词", "pkg_name": "com.example.words"},
+                    "preferences": {"tone": "简洁"},
                     "reply": "我记住了，后续默认按英语四级单词处理。",
                 }
             )
@@ -731,7 +809,9 @@ class ReviewAgentTest(unittest.TestCase):
             session = agent.state_store.get_session("chat-1")
 
             self.assertIn("我记住了", response.text)
-            self.assertEqual(session["agent_memory"], ["默认应用是英语四级单词"])
+            self.assertEqual(session["agent_memory"], ["default_app: 默认应用是英语四级单词"])
+            self.assertEqual(session["long_term_memory"]["app_info"]["app_name"], "英语四级单词")
+            self.assertEqual(session["long_term_memory"]["preferences"]["tone"], "简洁")
             self.assertIn("长期记忆：1 条", status)
 
     def test_llm_fallback_dispatches_market_search(self):
@@ -804,6 +884,8 @@ class ReviewAgentTest(unittest.TestCase):
 
             self.assertEqual(context["default_config"]["app_info"]["app_name"], "示例应用")
             self.assertEqual(context["preferences"]["market_stores"]["disabled_stores"], ["google_play"])
+            self.assertEqual(context["long_term_memory"]["preferences"]["market_stores"]["disabled_stores"], ["google_play"])
+            self.assertGreaterEqual(len(context["recent_conversation"]), 1)
             self.assertIn({"store": "google_play", "label": "Google Play"}, context["supported_market_stores"])
 
     def test_llm_can_dispatch_market_store_preference(self):
@@ -822,6 +904,36 @@ class ReviewAgentTest(unittest.TestCase):
 
             self.assertIn("默认不查询Google Play", response.text)
             self.assertIn("应用商店偏好：不查询 Google Play", status)
+
+    def test_conversation_history_keeps_last_20_turns(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"))
+
+            for index in range(25):
+                agent.handle_message("chat-1", f"记录应用：应用{index} / com.example.{index} / {index}", "user-1")
+
+            session = agent.state_store.get_session("chat-1")
+            history = session["conversation_history"]
+
+            self.assertEqual(len(history), 20)
+            self.assertIn("应用5", history[0]["user"])
+            self.assertIn("应用24", history[-1]["user"])
+            self.assertEqual(history[-1]["intent"], "record_app")
+
+    def test_llm_context_uses_recent_20_turns(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            llm = FakeLlmClient({"intent": "chat", "confidence": 1, "reply": "收到。"})
+            agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"))
+
+            for index in range(22):
+                agent.handle_message("chat-1", f"记录应用：应用{index} / com.example.{index} / {index}", "user-1")
+            agent.llm_client = llm
+            agent.handle_message("chat-1", "随便聊一句", "user-1")
+            context = llm.calls[-1][1]
+
+            self.assertEqual(len(context["recent_conversation"]), 20)
+            self.assertNotIn("应用0", context["recent_conversation"][0]["user"])
+            self.assertIn("应用21", context["recent_conversation"][-1]["user"])
 
     def test_view_submission_config_hides_secrets(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1115,6 +1227,45 @@ class ReviewAgentTest(unittest.TestCase):
 
             self.assertEqual(config.llm["enabled"], True)
             self.assertEqual(config.llm["model"], "inline-model")
+
+    def test_feishu_config_defaults_market_data_path_next_to_main_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "oppo_submission.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "feishu": {
+                            "app_id": "app-id",
+                            "app_secret": "app-secret",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = FeishuConfig.from_file(config_path)
+
+            self.assertEqual(config.market_data_config_path, Path(temp_dir) / "market_data.json")
+
+    def test_feishu_config_supports_explicit_market_data_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "oppo_submission.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "feishu": {
+                            "app_id": "app-id",
+                            "app_secret": "app-secret",
+                        },
+                        "market_data_config_path": "config/market_data.custom.json",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = FeishuConfig.from_file(config_path)
+
+            self.assertEqual(config.market_data_config_path, Path(temp_dir) / "config" / "market_data.custom.json")
 
     @staticmethod
     def _write_minimal_config(base_dir: Path) -> Path:

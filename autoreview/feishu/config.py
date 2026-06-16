@@ -13,6 +13,7 @@ class FeishuConfig:
     app_id: str
     app_secret: str
     config_path: Path | None = None
+    market_data_config_path: Path | None = None
     verification_token: str = ""
     encrypt_key: str = ""
     state_path: Path = Path("data/review_agent_state.json")
@@ -35,10 +36,15 @@ class FeishuConfig:
         image_analysis = feishu.get("image_analysis") or {}
         agent_app = raw.get("agent_app") or feishu.get("agent_app") or {}
         llm = _load_llm_config(raw, feishu, config_path)
+        market_data_config_path = _resolve_optional_path(
+            raw.get("market_data_config_path") or feishu.get("market_data_config_path") or "market_data.json",
+            config_path.parent,
+        )
         return cls(
             app_id=str(feishu.get("app_id", "")),
             app_secret=str(feishu.get("app_secret", "")),
             config_path=config_path,
+            market_data_config_path=market_data_config_path,
             verification_token=str(feishu.get("verification_token", "")),
             encrypt_key=str(feishu.get("encrypt_key", "")),
             state_path=resolved_state_path,
@@ -65,6 +71,15 @@ class FeishuConfig:
             llm=llm,
             agent_app_api_key=str(agent_app.get("api_key") or feishu.get("agent_app_api_key") or ""),
         )
+
+
+def _resolve_optional_path(value: Any, base_dir: Path) -> Path | None:
+    if value in (None, ""):
+        return None
+    path = Path(str(value))
+    if not path.is_absolute():
+        path = base_dir / path
+    return path
 
 
 def _load_llm_config(raw: dict[str, Any], feishu: dict[str, Any], config_path: Path) -> dict[str, Any]:

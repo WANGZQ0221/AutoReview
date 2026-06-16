@@ -28,6 +28,7 @@ class AgentApp:
         self.agent = ReviewAgent(
             JsonStateStore(config.state_path),
             oppo_config_path=config.config_path,
+            market_data_config_path=config.market_data_config_path,
             llm_client=llm_client if llm_client.enabled else None,
         )
 
