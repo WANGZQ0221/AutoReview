@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 import csv
 import json
 from pathlib import Path
+import re
 import subprocess
 from typing import Any
 
@@ -35,6 +36,20 @@ def scan_packlist(project_dir: str | Path) -> list[PacklistEntry]:
     return _rows_to_entries(rows)
 
 
+def scan_packlist_snapshot(snapshot_path: str | Path) -> list[PacklistEntry]:
+    path = Path(snapshot_path).resolve()
+    if not path.exists():
+        raise PackageError(f"packlist snapshot not found: {path}")
+    try:
+        raw = json.loads(_read_text_with_common_encodings(path))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PackageError(f"unable to read packlist snapshot: {path}") from exc
+    payload = raw.get("result") if isinstance(raw, dict) else raw
+    if not isinstance(payload, list):
+        raise PackageError("packlist snapshot must be a list or {result: list}")
+    return [_entry_from_mapping(item) for item in payload if isinstance(item, dict)]
+
+
 def resolve_packlist_package(project_dir: str | Path, pkg_name: str) -> list[PacklistEntry]:
     wanted = pkg_name.strip()
     if not wanted:
@@ -43,14 +58,29 @@ def resolve_packlist_package(project_dir: str | Path, pkg_name: str) -> list[Pac
 
 
 def resolve_packlist_app_name(project_dir: str | Path, app_name: str) -> list[PacklistEntry]:
+    return resolve_packlist_app_name_entries(scan_packlist(project_dir), app_name)
+
+
+def resolve_packlist_app_name_entries(entries: list[PacklistEntry], app_name: str) -> list[PacklistEntry]:
     wanted = _normalize_text(app_name)
+    wanted_aliases = _packlist_name_aliases(app_name)
     if not wanted:
         raise PackageError("app_name must not be empty")
-    entries = scan_packlist(project_dir)
     exact = [entry for entry in entries if _normalize_text(entry.app_name) == wanted]
     if exact:
         return exact
-    return [entry for entry in entries if wanted in _normalize_text(entry.app_name)]
+    alias_exact = [
+        entry
+        for entry in entries
+        if _normalize_text(entry.app_name) in wanted_aliases
+    ]
+    if alias_exact:
+        return alias_exact
+    return [
+        entry
+        for entry in entries
+        if any(alias in _normalize_text(entry.app_name) for alias in wanted_aliases)
+    ]
 
 
 def require_single_package_channel(project_dir: str | Path, pkg_name: str) -> PacklistEntry:
@@ -69,11 +99,33 @@ def packlist_entries_to_dicts(entries: list[PacklistEntry]) -> list[dict[str, An
     return [entry.to_dict() for entry in entries]
 
 
+def _entry_from_mapping(item: dict[str, Any]) -> PacklistEntry:
+    return PacklistEntry(
+        sheet=str(item.get("sheet") or ""),
+        row=int(item.get("row") or 0),
+        channel=str(item.get("channel") or ""),
+        app_name=str(item.get("app_name") or ""),
+        pkg_name=str(item.get("pkg_name") or ""),
+        version_code=str(item.get("version_code") or ""),
+        version_name=str(item.get("version_name") or ""),
+    )
+
+
 def _read_packlist_rows(packlist_path: Path) -> list[dict[str, Any]]:
     try:
         return _read_with_node_xlsx(packlist_path)
     except PackageError:
         return _read_text_packlist(packlist_path)
+
+
+def _read_text_with_common_encodings(path: Path) -> str:
+    data = path.read_bytes()
+    for encoding in ("utf-8-sig", "utf-16", "utf-16-le"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8")
 
 
 def _read_with_node_xlsx(packlist_path: Path) -> list[dict[str, Any]]:
@@ -166,3 +218,15 @@ def _cell(cells: list[Any], index: int) -> str:
 
 def _normalize_text(value: str) -> str:
     return "".join(str(value or "").strip().lower().split())
+
+
+def _packlist_name_aliases(value: str) -> set[str]:
+    normalized = _normalize_text(value)
+    aliases = {normalized} if normalized else set()
+    grade_match = re.search(r"([一二三四五六七八九0-9]+年级)", normalized)
+    semester_match = re.search(r"([上下]册)", normalized)
+    for subject in ("语文", "数学", "英语", "物理", "化学", "生物", "历史", "地理", "政治", "科学"):
+        if grade_match and semester_match and subject in normalized:
+            aliases.add(f"{grade_match.group(1)}{subject}{semester_match.group(1)}")
+            aliases.add(f"{grade_match.group(1)}{semester_match.group(1)}{subject}")
+    return aliases

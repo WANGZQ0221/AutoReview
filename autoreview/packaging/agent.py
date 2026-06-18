@@ -8,7 +8,12 @@ from pathlib import Path
 import re
 from typing import Any, Callable
 
-from .packlist import require_single_package_channel, resolve_packlist_app_name
+from .packlist import (
+    require_single_package_channel,
+    resolve_packlist_app_name,
+    resolve_packlist_app_name_entries,
+    scan_packlist_snapshot,
+)
 from .runner import (
     PackageError,
     load_package_jobs,
@@ -26,6 +31,7 @@ class PackagingSettings:
     project_dir: Path | None = None
     script_path: Path | None = None
     batch_file: Path | None = None
+    packlist_scan_file: Path | None = None
     node_command: str = "node"
     skip_start: bool = True
 
@@ -118,6 +124,10 @@ class PackagingAgent:
             project_dir=_optional_path(packaging.get("project_dir"), base_dir),
             script_path=_optional_path(packaging.get("script") or packaging.get("script_path"), base_dir),
             batch_file=_optional_path(packaging.get("batch_file"), base_dir),
+            packlist_scan_file=_optional_path(
+                packaging.get("packlist_scan_file") or packaging.get("packlist_snapshot"),
+                base_dir,
+            ),
             node_command=str(packaging.get("node_command") or "node"),
             skip_start=bool(packaging.get("skip_start", True)),
         )

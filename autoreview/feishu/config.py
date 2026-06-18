@@ -14,6 +14,7 @@ class FeishuConfig:
     app_secret: str
     config_path: Path | None = None
     market_data_config_path: Path | None = None
+    packaging_config_path: Path | None = None
     verification_token: str = ""
     encrypt_key: str = ""
     state_path: Path = Path("data/review_agent_state.json")
@@ -40,11 +41,16 @@ class FeishuConfig:
             raw.get("market_data_config_path") or feishu.get("market_data_config_path") or "market_data.json",
             config_path.parent,
         )
+        packaging_config_path = _resolve_optional_path(
+            raw.get("packaging_config_path") or feishu.get("packaging_config_path") or "packaging.json",
+            config_path.parent,
+        )
         return cls(
             app_id=str(feishu.get("app_id", "")),
             app_secret=str(feishu.get("app_secret", "")),
             config_path=config_path,
             market_data_config_path=market_data_config_path,
+            packaging_config_path=packaging_config_path,
             verification_token=str(feishu.get("verification_token", "")),
             encrypt_key=str(feishu.get("encrypt_key", "")),
             state_path=resolved_state_path,

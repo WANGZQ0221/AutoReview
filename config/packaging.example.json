@@ -2,7 +2,8 @@
   "packaging": {
     "project_dir": "D:/Workship/Pelbs/ClientPelbs/jsb-default/frameworks/runtime-src/proj.android-studio",
     "script": "D:/development_sercer/AutoReview/package.js",
-    "batch_file": "config/package_batch.json",
+    "batch_file": "package_batch.json",
+    "packlist_scan_file": "../packlist-scan.json",
     "node_command": "node",
     "skip_start": true
   }

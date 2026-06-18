@@ -50,7 +50,8 @@ AutoReview 用于把 Android 应用的“打包、提交、查询、审核协作
 - `config/llm_config.example.json`：共享大模型配置模板，可被各厂商配置复用。
 - `config/oppo_batch.example.json`：OPPO 批量提交配置模板。
 - `config/package_batch.example.json`：批量打包配置模板。
-- `config/packaging.example.json`：打包 Agent 配置字段示例，可合并到主配置。
+- `config/packaging.example.json`：通用打包配置模板。
+- `config/packaging.json`：本机通用打包配置，OPPO/小米/荣耀/vivo/华为可复用。
 - `config/xiaomi_submission.example.json`：小米配置模板。
 - `config/honor_submission.example.json`：荣耀配置模板。
 - `config/vivo_submission.example.json`：vivo 配置模板。
@@ -291,17 +292,34 @@ D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py batch-package 
 
 ## 打包 Agent
 
-如果要通过飞书机器人或 HTTP agent 触发打包，在主配置文件里增加：
+如果要通过飞书机器人或 HTTP agent 触发打包，使用独立通用配置 `config/packaging.json`。
+
+先复制模板：
+
+```powershell
+Copy-Item config\packaging.example.json config\packaging.json
+```
+
+示例：
 
 ```json
 {
   "packaging": {
     "project_dir": "D:/Workship/Pelbs/ClientPelbs/jsb-default/frameworks/runtime-src/proj.android-studio",
     "script": "D:/AutoReview/package.js",
-    "batch_file": "config/package_batch.json",
+    "batch_file": "package_batch.json",
+    "packlist_scan_file": "../packlist-scan.json",
     "node_command": "node",
     "skip_start": true
   }
+}
+```
+
+各商店提交配置默认会读取同目录下的 `packaging.json`。如果需要放到其他位置，可以在提交配置里显式指定：
+
+```json
+{
+  "packaging_config_path": "shared/packaging.json"
 }
 ```
 
@@ -324,7 +342,7 @@ D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py batch-package 
 说明：
 
 - 如果配置了 LLM，飞书消息会先由 LLM 理解成 `package_lookup`、`package_apk`、`batch_package` 等结构化意图；本地规则只做兜底和安全校验。
-- `八年级语文下册对应什么包` 会从 `packlist.xls` 查询应用名、包名、渠道、版本号。
+- `八年级语文下册对应什么包` 会优先从 `packlist.xls` 查询应用名、包名、渠道、版本号；如果项目目录没有 `packlist.xls`，会读取 `packaging.packlist_scan_file` 指向的扫描快照。
 - `打包 八年级语文下册` 会先按应用名查 `packlist.xls`，再解析渠道打包。
 - `打包 com.pelbs.book1067` 会从 `packlist.xls` 自动解析渠道，例如解析到 `xm1067` 后再打包。
 - `打包渠道 xm1067` 会直接写入该渠道到 `packconfig.txt` 后打包。
@@ -675,6 +693,19 @@ cd D:\development_sercer\AutoReview
 }
 ```
 
+### 配置边界
+
+当前建议按职责拆配置：
+
+- `config/packaging.json`：通用打包配置，包括 Android 项目目录、`package.js`、批量打包清单、packlist 扫描快照。所有应用商店复用。
+- `config/package_batch.json`：批量打包任务清单，只描述要打哪些项目/渠道。
+- `config/oppo_submission.json`：OPPO 凭证、OPPO API 地址、提交字段、材料字段、飞书入口配置。
+- `config/xiaomi_submission.json`、`config/honor_submission.json`、`config/vivo_submission.json`、`config/huawei_submission.json`：各厂商自己的提交配置，后续接 API 时只放各自平台字段。
+- `config/llm_config.json`：共享大模型配置。各厂商配置通过 `llm_config_path` 引用。
+- `config/market_data.json`：竞品/应用商店公开数据查询配置。通过 `market_data_config_path` 引用。
+
+原则：打包配置不放进某个商店的 submission 配置；商店配置只负责“提交到哪里、提交什么材料、用什么凭证”。
+
 说明：
 
 - OCR 用于识别审核意见截图。
@@ -692,6 +723,8 @@ cd D:\development_sercer\AutoReview
 已提供：
 
 - `config/oppo_submission.example.json`
+- `config/packaging.example.json`
+- `config/package_batch.example.json`
 - `config/market_data.example.json`
 - `config/xiaomi_submission.example.json`
 - `config/honor_submission.example.json`

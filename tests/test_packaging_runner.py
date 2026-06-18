@@ -10,6 +10,7 @@ from autoreview.packaging.runner import (
 )
 from autoreview.packaging.packlist import (
     require_single_package_channel,
+    resolve_packlist_app_name,
     resolve_packlist_package,
     scan_packlist,
 )
@@ -87,7 +88,7 @@ class PackagingRunnerTest(unittest.TestCase):
 
             entries = scan_packlist(project_dir)
 
-            self.assertEqual(len(entries), 2)
+            self.assertEqual(len(entries), 3)
             self.assertEqual(entries[0].channel, "xm1003")
             self.assertEqual(entries[0].pkg_name, "com.pelbs.book1003")
             self.assertEqual(entries[1].version_name, "3.1016.34.2")
@@ -103,6 +104,17 @@ class PackagingRunnerTest(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             self.assertEqual(entry.channel, "xm1016")
             self.assertEqual(entry.app_name, "四年级英语点读")
+
+    def test_resolve_packlist_app_name_accepts_semester_before_subject(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = self._make_project(Path(temp_dir))
+            self._write_text_packlist(project_dir)
+
+            matches = resolve_packlist_app_name(project_dir, "八年级下册语文")
+
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(matches[0].app_name, "八年级语文下册")
+            self.assertEqual(matches[0].pkg_name, "com.pelbs.book1067")
 
     def test_require_single_package_channel_errors_when_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -132,6 +144,7 @@ class PackagingRunnerTest(unittest.TestCase):
             ["h2"],
             ["", "四年级英语上册", "xm1003", "wx", "com.pelbs.book1003", "", "", "64", "", "", "3.1003.34.2"],
             ["", "四年级英语点读", "xm1016", "wx", "com.pelbs.book1016", "", "", "64", "", "", "3.1016.34.2"],
+            ["", "八年级语文下册", "xm1067", "wx", "com.pelbs.book1067", "", "", "68", "", "", "3.1067.38.2"],
         ]
         project_dir.joinpath("packlist.xls").write_text(
             "\n".join("\t".join(row) for row in rows),

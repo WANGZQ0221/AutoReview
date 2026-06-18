@@ -20,7 +20,11 @@ from autoreview.packaging.agent import (
     format_package_result,
     parse_package_request,
 )
-from autoreview.packaging.packlist import resolve_packlist_app_name
+from autoreview.packaging.packlist import (
+    resolve_packlist_app_name,
+    resolve_packlist_app_name_entries,
+    scan_packlist_snapshot,
+)
 from autoreview.oppo.agent import OppoSubmissionAgent, extract_rejection_reason
 from autoreview.oppo.config import OppoSubmissionConfig
 from autoreview.oppo.errors import OppoError
@@ -74,6 +78,7 @@ class ReviewAgent:
         *,
         oppo_config_path: str | Path | None = None,
         market_data_config_path: str | Path | None = None,
+        packaging_config_path: str | Path | None = None,
         oppo_agent_factory: Callable[[], Any] | None = None,
         market_searcher_factory: Callable[[], Any] | None = None,
         llm_client: Any | None = None,
@@ -81,11 +86,25 @@ class ReviewAgent:
         self.state_store = state_store
         self.oppo_config_path = Path(oppo_config_path) if oppo_config_path else None
         self.market_data_config_path = Path(market_data_config_path) if market_data_config_path else None
+        self.packaging_config_path = Path(packaging_config_path) if packaging_config_path else self._default_packaging_config_path()
         self.oppo_agent_factory = oppo_agent_factory
         self.market_searcher_factory = market_searcher_factory
         self.llm_client = llm_client
-        self.packaging_agent = PackagingAgent(self.oppo_config_path) if self.oppo_config_path else PackagingAgent(None)
+        self.packaging_agent = self._make_packaging_agent()
         self.tool_registry = self._build_tool_registry()
+
+    def _default_packaging_config_path(self) -> Path | None:
+        if not self.oppo_config_path:
+            return None
+        candidate = self.oppo_config_path.parent / "packaging.json"
+        return candidate if candidate.exists() else None
+
+    def _make_packaging_agent(self) -> PackagingAgent:
+        if self.packaging_config_path and self.packaging_config_path.exists():
+            return PackagingAgent(self.packaging_config_path)
+        if self.oppo_config_path:
+            return PackagingAgent(self.oppo_config_path)
+        return PackagingAgent(None)
 
     def handle_message(self, session_id: str, text: str, sender_id: str | None = None) -> AgentResponse:
         clean_text = self._normalize_incoming_text(text)
@@ -2396,7 +2415,7 @@ class ReviewAgent:
                 {"intent": "package_lookup", "missing": "query"},
             )
         try:
-            matches = resolve_packlist_app_name(self._packaging_project_dir(), query)
+            matches = self._resolve_packaging_lookup(query)
         except Exception as exc:
             return AgentResponse(f"查包失败：{exc}", {"intent": "package_lookup", "error": str(exc)})
         if not matches:
@@ -2432,6 +2451,26 @@ class ReviewAgent:
         if self.packaging_agent.settings.project_dir:
             return self.packaging_agent.settings.project_dir
         raise OppoError("还没有配置 packaging.project_dir，暂时不能查包。")
+
+    def _resolve_packaging_lookup(self, query: str):
+        try:
+            return resolve_packlist_app_name(self._packaging_project_dir(), query)
+        except Exception as primary_exc:
+            snapshot = self._packaging_packlist_snapshot()
+            if not snapshot:
+                raise primary_exc
+            entries = scan_packlist_snapshot(snapshot)
+            return resolve_packlist_app_name_entries(entries, query)
+
+    def _packaging_packlist_snapshot(self) -> Path | None:
+        configured = self.packaging_agent.settings.packlist_scan_file
+        if configured:
+            return configured
+        if self.oppo_config_path:
+            fallback = self.oppo_config_path.parent.parent / "packlist-scan.json"
+            if fallback.exists():
+                return fallback
+        return None
 
     def _filter_market_result(
         self,

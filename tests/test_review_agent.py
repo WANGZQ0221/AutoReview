@@ -450,6 +450,106 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("com.pelbs.book1067", response.text)
             self.assertIn("xm1067", response.text)
 
+    def test_package_lookup_falls_back_to_packlist_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = base / "config.json"
+            project_dir = base / "android-project"
+            project_dir.mkdir()
+            snapshot_path = base / "packlist-scan.json"
+            snapshot_path.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "result": [
+                            {
+                                "sheet": "CfgGameConfig",
+                                "row": 56,
+                                "channel": "xm1067",
+                                "app_name": "八年级语文下册",
+                                "pkg_name": "com.pelbs.book1067",
+                                "version_code": "68",
+                                "version_name": "3.1067.38.2",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                            "packlist_scan_file": str(snapshot_path),
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (base / "package.js").write_text("", encoding="utf-8")
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), oppo_config_path=config_path)
+
+            response = agent.handle_message("chat-1", "八年级下册语文对应什么包")
+
+            self.assertIn("com.pelbs.book1067", response.text)
+            self.assertIn("xm1067", response.text)
+
+    def test_package_lookup_prefers_separate_packaging_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_dir = base / "config"
+            config_dir.mkdir()
+            main_config = config_dir / "oppo_submission.json"
+            packaging_config = config_dir / "packaging.json"
+            project_dir = base / "android-project"
+            project_dir.mkdir()
+            snapshot_path = base / "packlist-scan.json"
+            snapshot_path.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "result": [
+                            {
+                                "sheet": "CfgGameConfig",
+                                "row": 56,
+                                "channel": "xm1067",
+                                "app_name": "八年级语文下册",
+                                "pkg_name": "com.pelbs.book1067",
+                                "version_code": "68",
+                                "version_name": "3.1067.38.2",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            packaging_config.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                            "packlist_scan_file": str(snapshot_path),
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            main_config.write_text(json.dumps({"submission": {"pkg_name": "com.example.app"}}, ensure_ascii=False), encoding="utf-8")
+            (base / "package.js").write_text("", encoding="utf-8")
+
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), oppo_config_path=main_config)
+            response = agent.handle_message("chat-1", "八年级下册语文对应什么包")
+
+            self.assertIn("com.pelbs.book1067", response.text)
+            self.assertEqual(agent.packaging_agent.config_path, packaging_config.resolve())
+
     def test_query_oppo_status_remembers_app_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = self._write_minimal_config(Path(temp_dir))
@@ -1685,6 +1785,45 @@ class ReviewAgentTest(unittest.TestCase):
             config = FeishuConfig.from_file(config_path)
 
             self.assertEqual(config.market_data_config_path, Path(temp_dir) / "config" / "market_data.custom.json")
+
+    def test_feishu_config_defaults_packaging_path_next_to_main_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "oppo_submission.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "feishu": {
+                            "app_id": "app-id",
+                            "app_secret": "app-secret",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = FeishuConfig.from_file(config_path)
+
+            self.assertEqual(config.packaging_config_path, Path(temp_dir) / "packaging.json")
+
+    def test_feishu_config_supports_explicit_packaging_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "oppo_submission.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "feishu": {
+                            "app_id": "app-id",
+                            "app_secret": "app-secret",
+                        },
+                        "packaging_config_path": "shared/packaging.json",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = FeishuConfig.from_file(config_path)
+
+            self.assertEqual(config.packaging_config_path, Path(temp_dir) / "shared" / "packaging.json")
 
     @staticmethod
     def _write_minimal_config(base_dir: Path) -> Path:
