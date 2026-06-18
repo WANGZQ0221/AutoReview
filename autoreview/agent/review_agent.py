@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import json
 import re
 import time
+import uuid
 from typing import Any, Callable
 
 from autoreview.market import AppMarketSearchResult, AppMarketSearcher, build_monthly_snapshot
@@ -23,6 +24,7 @@ from autoreview.packaging.agent import (
 from autoreview.packaging.packlist import (
     resolve_packlist_app_name,
     resolve_packlist_app_name_entries,
+    scan_packlist,
     scan_packlist_snapshot,
 )
 from autoreview.oppo.agent import OppoSubmissionAgent, extract_rejection_reason
@@ -32,7 +34,7 @@ from autoreview.oppo.rejection import analyze_rejection_reason
 
 from .config_editor import (
     ConfigEditError,
-    apply_config_patch_to_file,
+    apply_config_patch_to_targets,
     build_assignment_patch,
     build_json_patch,
     format_config_summary,
@@ -45,24 +47,47 @@ from .tools import ToolCall, ToolRegistry
 
 JsonDict = dict[str, Any]
 
-HELP_TEXT = """我可以协助 OPPO 审核提交流程：
-1. 发送“分析驳回：<原因>”分析审核不通过原因。
-2. 发送“状态”查看当前会话记录的应用和待补材料。
-3. 发送“记录应用：应用名 / 包名 / 版本号”记录上下文。
-4. 发送“准备提交”获取提交前检查清单。
-5. 发送图片，我会优先用 OCR 识别；如果像 OPPO 驳回截图，会自动分析。
-6. 发送“分析这张图”或“用最近图片分析驳回”，用最近一次图片 OCR 文本分析驳回。
-7. 发送“整改清单”生成待办项。
-8. 发送“查询审核状态”查询 OPPO 当前审核状态。
-9. 发送“提交检查”检查配置、文件和重提风险。
-10. 发送“查看提交配置”查看当前非密钥配置。
-11. 发送“设置提交配置：字段=值”，再发送“确认保存配置”写入配置文件。
-12. 发送文件或图片后，发送“绑定材料：APK/图标/截图1/版权证明/ICP证明”。
-13. 发送“搜索竞品：关键词”搜索应用商店里的同类 APP。
-14. 发送“记录竞品下载：关键词”搜索竞品并按当前月份写入会话状态。
-15. 发送“八年级语文下册对应什么包”查询 packlist 里的包名/渠道/版本。
-16. 发送“打包 八年级语文下册 dry-run”或“打包 八年级语文下册”触发打包。
-17. 发送“清空当前记录”清空当前飞书会话状态；发送“清空所有记录”清空全部会话状态。"""
+HELP_TEXT = """我可以协助这些场景：
+
+可用场景
+
+1. 闲聊与记忆
+- “状态”
+- “记录应用：应用名 / 包名 / 版本号”
+- “清空当前记录”
+
+2. 应用商店查询
+- “搜索应用商店：抖音”
+- “帮我查一下小米应用市场，抖音的下载量”
+
+3. 竞品分析
+- “搜索竞品：英语四级单词”
+- “记录竞品下载：英语四级单词”
+
+4. 打包与批量打包
+- “八年级语文下册对应什么包”
+- “打包 八年级语文下册 dry-run”
+- “批量打包 dry-run”
+
+5. OPPO 审核与提交检查
+- “查询审核状态”
+- “提交检查”
+- “准备提交”
+
+6. 驳回分析与整改
+- “分析驳回：<原因>”
+- 发送驳回截图后说“分析这张图”
+- “整改清单”
+
+7. 配置与材料
+- “查看提交配置”
+- “设置提交配置：字段=值”
+- “确认保存配置”
+- 发送文件后说“绑定材料：APK/图标/截图1/版权证明/ICP证明”
+
+8. 图片 OCR / image2
+- 直接发送图片
+- “分析最近图片”"""
 
 
 @dataclass
@@ -92,6 +117,7 @@ class ReviewAgent:
         self.llm_client = llm_client
         self.packaging_agent = self._make_packaging_agent()
         self.tool_registry = self._build_tool_registry()
+        self._active_traces: dict[str, JsonDict] = {}
 
     def _default_packaging_config_path(self) -> Path | None:
         if not self.oppo_config_path:
@@ -108,12 +134,15 @@ class ReviewAgent:
 
     def handle_message(self, session_id: str, text: str, sender_id: str | None = None) -> AgentResponse:
         clean_text = self._normalize_incoming_text(text)
+        trace_id = self._start_trace(session_id, clean_text, sender_id=sender_id)
         if not clean_text:
             response = AgentResponse("我收到空消息了。发送“帮助”可以查看可用指令。", {})
+            self._finish_trace(session_id, trace_id, response)
             self._record_conversation_turn(session_id, "", response, sender_id=sender_id)
             return response
 
         response = self._handle_message_logic(session_id, clean_text, sender_id=sender_id)
+        self._finish_trace(session_id, trace_id, response)
         if response.data.get("intent") not in {"clear_session_state", "clear_all_state"}:
             self._record_conversation_turn(session_id, clean_text, response, sender_id=sender_id)
         return response
@@ -126,6 +155,14 @@ class ReviewAgent:
         recent_context_response = self._answer_recent_context_question(session_id, clean_text)
         if recent_context_response:
             return recent_context_response
+
+        packaging_followup = self._handle_packaging_followup(session_id, clean_text)
+        if packaging_followup:
+            return packaging_followup
+
+        packaging_catalog = self._handle_packaging_catalog_request(session_id, clean_text)
+        if packaging_catalog:
+            return packaging_catalog
 
         tool_response = self._response_from_llm_tool_call(session_id, clean_text, sender_id=sender_id)
         if tool_response:
@@ -167,7 +204,14 @@ class ReviewAgent:
         if clean_text.startswith("分析驳回"):
             reason = self._extract_payload(clean_text)
             if not reason:
-                return AgentResponse("请按“分析驳回：<OPPO驳回原因>”发送完整原因。", {"intent": "analyze_rejection"})
+                return AgentResponse(
+                    _format_error_message(
+                        "驳回分析缺少原因",
+                        "没有收到 OPPO 驳回原因正文。",
+                        ["请按“分析驳回：<OPPO驳回原因>”发送完整原因。"],
+                    ),
+                    {"intent": "analyze_rejection"},
+                )
             return self.analyze_rejection_text(session_id, reason, sender_id=sender_id)
 
         if clean_text in {"分析这张图", "用最近图片分析驳回", "分析最近图片", "分析图片"}:
@@ -175,7 +219,11 @@ class ReviewAgent:
             image_text = self._get_last_image_text(session)
             if not image_text:
                 return AgentResponse(
-                    "最近图片还没有可用于分析的 OCR 文本。请先发送一张包含驳回原因的截图。",
+                    _format_error_message(
+                        "图片分析缺少 OCR 文本",
+                        "最近图片还没有可用于分析的 OCR 文本。",
+                        ["请先发送一张包含驳回原因的截图。"],
+                    ),
                     {"intent": "analyze_last_image", "missing": "ocr_text"},
                 )
             return self.analyze_rejection_text(session_id, image_text, sender_id=sender_id)
@@ -192,11 +240,23 @@ class ReviewAgent:
         if clean_text.startswith("批量设置提交配置"):
             return self.stage_config_json(session_id, self._extract_payload(clean_text), sender_id=sender_id)
 
+        packaging_script_update = self._extract_packaging_script_update(clean_text)
+        if packaging_script_update:
+            return self.stage_config_assignment(
+                session_id,
+                f"packaging.script={packaging_script_update}",
+                sender_id=sender_id,
+            )
+
         if clean_text in {"确认保存配置", "保存配置", "确认配置"}:
             return self.confirm_config_update(session_id, sender_id=sender_id)
 
         if clean_text in {"取消保存配置", "取消配置修改", "放弃配置修改"}:
             return self.cancel_config_update(session_id, sender_id=sender_id)
+
+        config_followup = self._answer_config_followup_question(session_id, clean_text)
+        if config_followup:
+            return config_followup
 
         if clean_text.startswith("绑定材料"):
             label = self._extract_payload(clean_text) or clean_text.replace("绑定材料", "", 1).strip()
@@ -210,7 +270,11 @@ class ReviewAgent:
             query = self._extract_market_query(clean_text, session_id)
             if not query:
                 return AgentResponse(
-                    "请按“搜索竞品：关键词”发送，例如“搜索竞品：英语四级单词”。",
+                    _format_error_message(
+                        "应用商店查询缺少关键词",
+                        "没有识别到要查询的应用名或关键词。",
+                        ["请按“搜索应用商店：关键词”或“搜索竞品：关键词”发送，例如“搜索竞品：英语四级单词”。"],
+                    ),
                     {"intent": "market_search", "missing": "query"},
                 )
             research_response = self._handle_app_store_data_platform_research(clean_text, query)
@@ -241,7 +305,11 @@ class ReviewAgent:
             query = self._extract_market_query(clean_text, session_id)
             if not query:
                 return AgentResponse(
-                    "请按“记录竞品下载：关键词”发送，例如“记录竞品下载：英语四级单词”。",
+                    _format_error_message(
+                        "竞品下载记录缺少关键词",
+                        "没有识别到要记录的应用名或关键词。",
+                        ["请按“记录竞品下载：关键词”发送，例如“记录竞品下载：英语四级单词”。"],
+                    ),
                     {"intent": "market_download_snapshot", "missing": "query"},
                 )
             return self.record_competitor_downloads(
@@ -262,10 +330,7 @@ class ReviewAgent:
                 },
             )
             return AgentResponse(
-                "已记录应用信息：\n"
-                f"- 应用名：{app_info.get('app_name') or '未提供'}\n"
-                f"- 包名：{app_info.get('pkg_name') or '未提供'}\n"
-                f"- 版本号：{app_info.get('version_code') or '未提供'}",
+                self._format_record_app_info(app_info),
                 {"intent": "record_app", "app_info": app_info},
             )
 
@@ -327,7 +392,11 @@ class ReviewAgent:
             query = _clean_market_query((self._default_app_info(session_id) or {}).get("app_name"))
         if not query:
             return AgentResponse(
-                "请提供有效的应用名或关键词，例如“搜索竞品：英语四级单词”。",
+                _format_error_message(
+                    "应用商店查询缺少关键词",
+                    "没有识别到有效的应用名或关键词。",
+                    ["例如发送“搜索应用商店：抖音”或“搜索竞品：英语四级单词”。"],
+                ),
                 {"intent": "market_search", "missing": "query"},
             )
         result = self._normalize_market_result(
@@ -358,7 +427,7 @@ class ReviewAgent:
             },
         )
         return AgentResponse(
-            self._format_market_search(result, filtered_names=filtered_names),
+            self._format_market_search(result, filtered_names=filtered_names, source_text=source_text),
             {"intent": "market_search", "result": result.to_dict(), "filtered_names": filtered_names},
         )
 
@@ -379,7 +448,11 @@ class ReviewAgent:
             query = _clean_market_query((self._default_app_info(session_id) or {}).get("app_name"))
         if not query:
             return AgentResponse(
-                "请提供有效的应用名或关键词，例如“记录竞品下载：英语四级单词”。",
+                _format_error_message(
+                    "竞品下载记录缺少关键词",
+                    "没有识别到有效的应用名或关键词。",
+                    ["例如发送“记录竞品下载：英语四级单词”。"],
+                ),
                 {"intent": "market_download_snapshot", "missing": "query"},
             )
         result = self._normalize_market_result(
@@ -422,14 +495,14 @@ class ReviewAgent:
     def clear_session_state(self, session_id: str) -> AgentResponse:
         self.state_store.clear_session(session_id)
         return AgentResponse(
-            "已清空当前会话记录。",
+            "会话记录已清空\n\n结果：\n- 当前会话记录已清空。",
             {"intent": "clear_session_state", "session_id": session_id},
         )
 
     def clear_all_state(self) -> AgentResponse:
         self.state_store.clear_all()
         return AgentResponse(
-            "已清空全部会话记录。",
+            "全部会话记录已清空\n\n结果：\n- 全部会话记录已清空。",
             {"intent": "clear_all_state"},
         )
 
@@ -437,11 +510,15 @@ class ReviewAgent:
         app_info = self._default_app_info(session_id)
         if not app_info:
             return AgentResponse(
-                "当前还没有默认应用。可以发送“记录应用：应用名 / 包名 / 版本号”，或先查询审核状态。",
+                _format_error_message(
+                    "当前没有默认应用",
+                    "当前会话和配置里都没有可用的默认应用信息。",
+                    ["可以发送“记录应用：应用名 / 包名 / 版本号”。", "或先查询审核状态。"],
+                ),
                 {"intent": "describe_default_app", "missing": "app_info"},
             )
         return AgentResponse(
-            "当前默认应用：\n"
+            "当前默认应用\n\n应用信息：\n"
             f"- 应用名：{app_info.get('app_name') or '未记录'}\n"
             f"- 包名：{app_info.get('pkg_name') or '未记录'}\n"
             f"- 版本号：{app_info.get('version_code') or '未记录'}",
@@ -459,7 +536,7 @@ class ReviewAgent:
             status = self._make_oppo_agent().status(self._extract_version_code(text))
         except OppoError as exc:
             return AgentResponse(
-                f"查询 OPPO 审核状态失败：{exc}",
+                _format_error_message("查询 OPPO 审核状态失败", str(exc), ["检查 OPPO 配置后重试。"]),
                 {"intent": "oppo_status", "error": str(exc)},
             )
         if session_id:
@@ -474,7 +551,7 @@ class ReviewAgent:
             validation = self._make_oppo_agent().validate()
         except OppoError as exc:
             return AgentResponse(
-                f"提交检查失败：{exc}",
+                _format_error_message("提交检查失败", str(exc), ["检查 OPPO 配置和本地材料后重试。"]),
                 {"intent": "submission_check", "error": str(exc)},
             )
         session = self.state_store.get_session(session_id)
@@ -492,7 +569,11 @@ class ReviewAgent:
         analysis = session.get("last_rejection_analysis") or {}
         if not analysis:
             return AgentResponse(
-                "还没有驳回分析结果。请先发送驳回截图，或发送“分析驳回：<原因>”。",
+                _format_error_message(
+                    "整改清单暂不可用",
+                    "当前会话还没有驳回分析结果。",
+                    ["请先发送驳回截图。", "或发送“分析驳回：<原因>”。"],
+                ),
                 {"intent": "remediation_checklist", "missing": "rejection_analysis"},
             )
         items = self._build_remediation_items(analysis)
@@ -511,16 +592,19 @@ class ReviewAgent:
     def view_submission_config(self) -> AgentResponse:
         if not self.oppo_config_path:
             return AgentResponse(
-                "还没有配置 OPPO 配置文件路径，暂时不能查看提交配置。",
+                _format_error_message("无法查看提交配置", "还没有配置 OPPO 配置文件路径。"),
                 {"intent": "view_submission_config", "missing": "config_path"},
             )
         try:
             text = format_config_summary(self.oppo_config_path)
         except ConfigEditError as exc:
             return AgentResponse(
-                f"查看提交配置失败：{exc}",
+                _format_error_message("查看提交配置失败", str(exc)),
                 {"intent": "view_submission_config", "error": str(exc)},
             )
+        packaging_summary = self._format_packaging_config_summary()
+        if packaging_summary:
+            text += "\n\n" + packaging_summary
         return AgentResponse(text, {"intent": "view_submission_config"})
 
     def stage_config_assignment(
@@ -531,14 +615,14 @@ class ReviewAgent:
     ) -> AgentResponse:
         if not self.oppo_config_path:
             return AgentResponse(
-                "还没有配置 OPPO 配置文件路径，暂时不能修改提交配置。",
+                _format_error_message("无法暂存配置修改", "还没有配置 OPPO 配置文件路径。"),
                 {"intent": "stage_config_update", "missing": "config_path"},
             )
         try:
             patch = build_assignment_patch(payload)
         except ConfigEditError as exc:
             return AgentResponse(
-                f"配置修改暂存失败：{exc}",
+                _format_error_message("配置修改暂存失败", str(exc)),
                 {"intent": "stage_config_update", "error": str(exc)},
             )
         return self._stage_config_patch(session_id, patch, sender_id=sender_id)
@@ -551,14 +635,14 @@ class ReviewAgent:
     ) -> AgentResponse:
         if not self.oppo_config_path:
             return AgentResponse(
-                "还没有配置 OPPO 配置文件路径，暂时不能修改提交配置。",
+                _format_error_message("无法暂存批量配置修改", "还没有配置 OPPO 配置文件路径。"),
                 {"intent": "stage_config_update", "missing": "config_path"},
             )
         try:
             patch = build_json_patch(payload)
         except ConfigEditError as exc:
             return AgentResponse(
-                f"批量配置暂存失败：{exc}",
+                _format_error_message("批量配置暂存失败", str(exc)),
                 {"intent": "stage_config_update", "error": str(exc)},
             )
         return self._stage_config_patch(session_id, patch, sender_id=sender_id)
@@ -572,19 +656,23 @@ class ReviewAgent:
         pending = session.get("pending_config_patch") or {}
         if not pending:
             return AgentResponse(
-                "没有待保存的配置修改。可以先发送“设置提交配置：字段=值”。",
+                _format_error_message("没有待保存的配置修改", "当前会话没有暂存配置修改。", ["可以先发送“设置提交配置：字段=值”。"]),
                 {"intent": "confirm_config_update", "missing": "pending_config_patch"},
             )
         if not self.oppo_config_path:
             return AgentResponse(
-                "还没有配置 OPPO 配置文件路径，暂时不能保存提交配置。",
+                _format_error_message("无法保存提交配置", "还没有配置 OPPO 配置文件路径。"),
                 {"intent": "confirm_config_update", "missing": "config_path"},
             )
         try:
-            result = apply_config_patch_to_file(self.oppo_config_path, pending)
+            result = apply_config_patch_to_targets(
+                self.oppo_config_path,
+                pending,
+                packaging_config_path=self.packaging_config_path,
+            )
         except ConfigEditError as exc:
             return AgentResponse(
-                f"保存配置失败：{exc}",
+                _format_error_message("保存配置失败", str(exc)),
                 {"intent": "confirm_config_update", "error": str(exc)},
             )
         self.state_store.update_session(
@@ -596,9 +684,13 @@ class ReviewAgent:
             },
         )
         check = self.check_submission(session_id)
+        result_items = result.get("results") or []
+        backup_names = [Path(item["backup_path"]).name for item in result_items if item.get("backup_path")]
         return AgentResponse(
-            "配置已保存。\n"
-            f"- 备份：{Path(result['backup_path']).name}\n\n"
+            "配置已保存\n"
+            "\n保存结果：\n"
+            + (f"- 备份：{'、'.join(backup_names)}\n" if backup_names else "- 备份：未生成\n")
+            + "\n自动提交检查：\n"
             + check.text,
             {"intent": "confirm_config_update", "result": result, "check": check.data},
         )
@@ -616,7 +708,7 @@ class ReviewAgent:
             },
         )
         return AgentResponse(
-            "已取消待保存的配置修改。",
+            "配置修改已取消\n\n结果：\n- 已取消当前会话待保存的配置修改。",
             {"intent": "cancel_config_update"},
         )
 
@@ -628,7 +720,7 @@ class ReviewAgent:
     ) -> AgentResponse:
         if not self.oppo_config_path:
             return AgentResponse(
-                "还没有配置 OPPO 配置文件路径，暂时不能绑定材料。",
+                _format_error_message("无法绑定材料", "还没有配置 OPPO 配置文件路径。"),
                 {"intent": "bind_material", "missing": "config_path"},
             )
         session = self.state_store.get_session(session_id)
@@ -641,7 +733,7 @@ class ReviewAgent:
             )
         except MaterialBindError as exc:
             return AgentResponse(
-                f"绑定材料失败：{exc}",
+                _format_error_message("绑定材料失败", str(exc)),
                 {"intent": "bind_material", "error": str(exc)},
             )
         self.state_store.update_session(
@@ -654,10 +746,11 @@ class ReviewAgent:
         check = self.check_submission(session_id)
         material_name = _material_name(result.get("material_type"), result.get("index"))
         return AgentResponse(
-            "材料已绑定：\n"
+            "材料已绑定\n\n绑定结果：\n"
             f"- 类型：{material_name}\n"
             f"- 保存到：{result['target_path']}\n"
             f"- 配置项：{', '.join(result['config_patch'].keys())}\n\n"
+            "自动提交检查：\n"
             + check.text,
             {"intent": "bind_material", "result": result, "check": check.data},
         )
@@ -719,7 +812,7 @@ class ReviewAgent:
             image_text = self._get_last_image_text(session)
             if not image_text:
                 return AgentResponse(
-                    "最近图片还没有可用于分析的 OCR 文本。请先发送一张包含驳回原因的截图。",
+                    _format_error_message("图片分析缺少 OCR 文本", "最近图片还没有可用于分析的 OCR 文本。", ["请先发送一张包含驳回原因的截图。"]),
                     {"intent": "analyze_last_image", "missing": "ocr_text", "semantic": True},
                 )
             return self.analyze_rejection_text(session_id, image_text, sender_id=sender_id)
@@ -747,6 +840,9 @@ class ReviewAgent:
 
         if self._looks_like_config_update_request(lowered):
             payload = self._extract_payload(text) or self._extract_assignment_payload(text)
+            packaging_script_update = self._extract_packaging_script_update(text)
+            if packaging_script_update:
+                payload = f"packaging.script={packaging_script_update}"
             if not payload:
                 return AgentResponse(
                     "我理解你想修改提交配置，但还缺字段和值。可以说“把 submission.version_code=101 暂存一下”。",
@@ -771,10 +867,7 @@ class ReviewAgent:
                 },
             )
             return AgentResponse(
-                "已记录应用信息：\n"
-                f"- 应用名：{app_info.get('app_name') or '未提供'}\n"
-                f"- 包名：{app_info.get('pkg_name') or '未提供'}\n"
-                f"- 版本号：{app_info.get('version_code') or '未提供'}",
+                self._format_record_app_info(app_info),
                 {"intent": "record_app", "app_info": app_info, "semantic": True},
             )
 
@@ -850,12 +943,17 @@ class ReviewAgent:
     ) -> JsonDict | None:
         if not self.llm_client:
             return None
+        context = self._llm_context(session_id)
+        self._trace_event(session_id, "llm_interpret_request", {"message": text, "context": context})
         try:
-            decision = self.llm_client.interpret(text, self._llm_context(session_id))
+            decision = self.llm_client.interpret(text, context)
         except Exception as exc:
+            self._trace_event(session_id, "llm_interpret_error", {"error": str(exc)})
             return {"intent": "llm_error", "error": str(exc)}
         if not isinstance(decision, dict):
+            self._trace_event(session_id, "llm_interpret_invalid", {"result": str(decision)})
             return {"intent": "llm_error", "error": "LLM decision must be a JSON object"}
+        self._trace_event(session_id, "llm_interpret_response", {"decision": decision})
         self._store_llm_memories(session_id, decision, sender_id=sender_id)
         return decision
 
@@ -874,7 +972,11 @@ class ReviewAgent:
         if intent == "llm_error":
             if allow_chat:
                 return AgentResponse(
-                    f"我尝试调用大模型理解这句话，但失败了：{_shorten(decision.get('error'))}",
+                    _format_error_message(
+                        "大模型理解失败",
+                        decision.get("error"),
+                        ["可以换个说法再发一次，或发送“帮助”查看可用场景。"],
+                    ),
                     {"intent": "llm_error", "error": str(decision.get("error") or "")},
                 )
             return None
@@ -883,7 +985,10 @@ class ReviewAgent:
             if allow_chat:
                 reply = str(decision.get("reply") or "").strip()
                 return AgentResponse(
-                    reply or "我不太确定你的意思。可以换个说法，或发送“帮助”查看可用能力。",
+                    _format_llm_free_reply(
+                        "unknown",
+                        reply or "我不太确定你的意思。可以换个说法，或发送“帮助”查看可用能力。",
+                    ),
                     {"intent": "unknown", "llm": decision},
                 )
             return None
@@ -904,7 +1009,7 @@ class ReviewAgent:
         reply = str(decision.get("reply") or "").strip()
         if not reply:
             return None
-        return AgentResponse(reply, {"intent": intent, "llm": decision})
+        return AgentResponse(_format_llm_free_reply(intent, reply), {"intent": intent, "llm": decision})
 
     def _llm_context(self, session_id: str) -> JsonDict:
         session = self.state_store.get_session(session_id)
@@ -1002,21 +1107,21 @@ class ReviewAgent:
         history = [item for item in (session.get("conversation_history") or []) if item.get("user")]
         if history:
             recent = history[-3:]
-            lines = ["最近你发给我的内容是："]
+            lines = ["最近对话", "", "最近你发给我的内容："]
             for item in recent:
                 lines.append(f"- {item.get('user')}")
             return AgentResponse("\n".join(lines), {"intent": "recent_context", "history": recent})
         app_info = session.get("app_info") or {}
         if app_info:
             return AgentResponse(
-                "当前会话没有可回放的逐轮对话记录；只保留了结构化应用信息："
-                f"{app_info.get('app_name') or '未记录应用名'} / "
-                f"{app_info.get('pkg_name') or '未记录包名'} / "
-                f"{app_info.get('version_code') or '未记录版本号'}。",
+                "最近对话\n\n说明：\n- 当前会话没有可回放的逐轮对话记录。\n\n结构化应用信息：\n"
+                f"- 应用名：{app_info.get('app_name') or '未记录应用名'}\n"
+                f"- 包名：{app_info.get('pkg_name') or '未记录包名'}\n"
+                f"- 版本号：{app_info.get('version_code') or '未记录版本号'}",
                 {"intent": "recent_context", "missing": "conversation_history", "app_info": app_info},
             )
         return AgentResponse(
-            "当前会话还没有可回放的上一轮信息。",
+            "最近对话\n\n说明：\n- 当前会话还没有可回放的上一轮信息。",
             {"intent": "recent_context", "missing": "conversation_history"},
         )
 
@@ -1039,12 +1144,18 @@ class ReviewAgent:
             return AgentResponse(self._format_session(session), {"intent": "status", "session": session})
         if intent == "chat":
             return AgentResponse(
-                str(decision.get("reply") or "我在。你可以直接说要打包、查审核、分析驳回、看竞品或改配置。").strip(),
+                _format_llm_free_reply(
+                    "chat",
+                    str(decision.get("reply") or "我在。你可以直接说要打包、查审核、分析驳回、看竞品或改配置。").strip(),
+                ),
                 {"intent": "chat"},
             )
         if intent == "remember":
             reply = str(decision.get("reply") or "我记住了。").strip()
-            return AgentResponse(reply, {"intent": "remember", "memories": decision.get("memories") or []})
+            return AgentResponse(
+                _format_llm_free_reply("remember", reply),
+                {"intent": "remember", "memories": decision.get("memories") or []},
+            )
         if intent == "record_app":
             app_info = decision.get("app_info") if isinstance(decision.get("app_info"), dict) else {}
             if not app_info:
@@ -1062,10 +1173,7 @@ class ReviewAgent:
             )
             stored = self.state_store.get_session(session_id).get("app_info") or {}
             return AgentResponse(
-                "已记录应用信息：\n"
-                f"- 应用名：{stored.get('app_name') or '未提供'}\n"
-                f"- 包名：{stored.get('pkg_name') or '未提供'}\n"
-                f"- 版本号：{stored.get('version_code') or '未提供'}",
+                self._format_record_app_info(stored),
                 {"intent": "record_app", "app_info": stored},
             )
         if intent == "analyze_rejection":
@@ -1077,7 +1185,10 @@ class ReviewAgent:
             session = self.state_store.get_session(session_id)
             image_text = self._get_last_image_text(session)
             if not image_text:
-                return AgentResponse("最近图片还没有可用于分析的 OCR 文本。", {"intent": intent, "missing": "ocr_text"})
+                return AgentResponse(
+                    _format_error_message("图片分析缺少 OCR 文本", "最近图片还没有可用于分析的 OCR 文本。", ["请先发送一张包含驳回原因的截图。"]),
+                    {"intent": intent, "missing": "ocr_text"},
+                )
             return self.analyze_rejection_text(session_id, image_text, sender_id=sender_id)
         if intent == "remediation_checklist":
             return self.build_remediation_checklist(session_id, sender_id=sender_id)
@@ -1103,6 +1214,11 @@ class ReviewAgent:
             return self.view_submission_config()
         if intent == "stage_config_update":
             assignment = str(decision.get("config_assignment") or self._extract_assignment_payload(text)).strip()
+            packaging_script_update = self._extract_packaging_script_update(text)
+            if packaging_script_update and (
+                not assignment or "package_script_path" in assignment or "packaging.script" not in assignment
+            ):
+                assignment = f"packaging.script={packaging_script_update}"
             if not assignment:
                 return AgentResponse("要改哪个配置？请给我类似 submission.version_code=10002 的字段和值。", {"intent": intent, "missing": "assignment"})
             if assignment.lstrip().startswith("{"):
@@ -1298,6 +1414,47 @@ class ReviewAgent:
             return
         history.append(turn)
         self.state_store.update_session(session_id, {"conversation_history": history[-20:], "sender_id": sender_id})
+
+    def _start_trace(self, session_id: str, text: str, *, sender_id: str | None = None) -> str:
+        trace_id = uuid.uuid4().hex
+        self._active_traces[trace_id] = {
+            "trace_id": trace_id,
+            "session_id": session_id,
+            "sender_id": sender_id or "",
+            "user_message": text,
+            "events": [],
+            "started_at": int(time.time()),
+        }
+        return trace_id
+
+    def _trace_event(self, session_id: str, event_type: str, payload: JsonDict) -> None:
+        trace = self._current_trace(session_id)
+        if not trace:
+            return
+        trace.setdefault("events", []).append(
+            {
+                "ts": int(time.time()),
+                "type": event_type,
+                "payload": _redact_for_trace(payload),
+            }
+        )
+
+    def _finish_trace(self, session_id: str, trace_id: str, response: AgentResponse) -> None:
+        trace = self._active_traces.pop(trace_id, None)
+        if not trace:
+            return
+        if response.data.get("intent") in {"clear_session_state", "clear_all_state"}:
+            return
+        trace["finished_at"] = int(time.time())
+        trace["final_response"] = _redact_for_trace({"text": response.text, "data": response.data})
+        if hasattr(self.state_store, "append_trace_event"):
+            self.state_store.append_trace_event(session_id, _redact_for_trace(trace))
+
+    def _current_trace(self, session_id: str) -> JsonDict | None:
+        for trace in reversed(list(self._active_traces.values())):
+            if trace.get("session_id") == session_id:
+                return trace
+        return None
 
     def _stage_config_patch(
         self,
@@ -1505,17 +1662,24 @@ class ReviewAgent:
     ) -> AgentResponse | None:
         if not self.llm_client or not hasattr(self.llm_client, "choose_tool"):
             return None
+        context = self._llm_context(session_id)
+        schemas = self.tool_registry.schemas()
+        self._trace_event(session_id, "llm_tool_choice_request", {"message": text, "context": context, "tools": schemas})
         try:
-            raw_call = self.llm_client.choose_tool(text, self._llm_context(session_id), self.tool_registry.schemas())
-        except Exception:
+            raw_call = self.llm_client.choose_tool(text, context, schemas)
+        except Exception as exc:
+            self._trace_event(session_id, "llm_tool_choice_error", {"error": str(exc)})
             return None
         if not isinstance(raw_call, dict):
+            self._trace_event(session_id, "llm_tool_choice_invalid", {"result": str(raw_call)})
             return None
+        self._trace_event(session_id, "llm_tool_choice_response", {"tool_call": raw_call})
         self._store_llm_memories(session_id, raw_call, sender_id=sender_id)
         try:
             tool_call = ToolCall.from_mapping(raw_call)
         except ValueError:
             return None
+        tool_call = self._normalize_market_tool_call(tool_call, text)
         if tool_call.is_noop:
             return None
         if tool_call.confidence is not None and tool_call.confidence < 0.45:
@@ -1524,11 +1688,12 @@ class ReviewAgent:
             return None
 
         context = {"session_id": session_id, "text": text, "sender_id": sender_id}
+        self._trace_event(session_id, "tool_execute_request", {"tool_call": tool_call.to_dict(), "context": context})
         try:
             response = self.tool_registry.execute(tool_call, context)
         except Exception as exc:
             response = AgentResponse(
-                f"工具执行失败：{exc}",
+                _format_error_message("工具执行失败", str(exc), ["查看 trace 日志确认工具输入和本地异常。"]),
                 {"intent": tool_call.name, "error": str(exc)},
             )
         if not isinstance(response, AgentResponse):
@@ -1539,11 +1704,25 @@ class ReviewAgent:
             "text": response.text,
             "data": _json_safe(response.data),
         }
+        self._trace_event(session_id, "tool_execute_response", {"tool_call": tool_call.to_dict(), "tool_result": tool_result})
         summary = self._summarize_tool_response(session_id, text, tool_call, tool_result)
         data = dict(response.data)
         data["tool_call"] = tool_call.to_dict()
         data["tool_result"] = tool_result
-        return AgentResponse(summary or response.text, data)
+        return AgentResponse(_format_tool_summary_reply(summary) or response.text, data)
+
+    @staticmethod
+    def _normalize_market_tool_call(tool_call: ToolCall, text: str) -> ToolCall:
+        if tool_call.name != "market_download_snapshot":
+            return tool_call
+        if _looks_like_market_download_request(text):
+            return tool_call
+        return ToolCall(
+            name="market_search",
+            arguments=dict(tool_call.arguments),
+            confidence=tool_call.confidence,
+            reason=tool_call.reason or "用户是在查应用商店公开指标，不是要求记录月度下载快照。",
+        )
 
     def _summarize_tool_response(
         self,
@@ -1554,17 +1733,31 @@ class ReviewAgent:
     ) -> str:
         if not self.llm_client or not hasattr(self.llm_client, "summarize_tool_result"):
             return ""
+        context = self._llm_context(session_id)
+        self._trace_event(
+            session_id,
+            "llm_tool_summary_request",
+            {
+                "message": text,
+                "context": context,
+                "tool_call": tool_call.to_dict(),
+                "tool_result": tool_result,
+            },
+        )
         try:
-            return str(
+            summary = str(
                 self.llm_client.summarize_tool_result(
                     text,
-                    self._llm_context(session_id),
+                    context,
                     tool_call.to_dict(),
                     tool_result,
                 )
                 or ""
             ).strip()
-        except Exception:
+            self._trace_event(session_id, "llm_tool_summary_response", {"reply": summary})
+            return _format_tool_summary_reply(summary)
+        except Exception as exc:
+            self._trace_event(session_id, "llm_tool_summary_error", {"error": str(exc)})
             return ""
 
     def _tool_session_status(self, call: ToolCall, context: JsonDict) -> AgentResponse:
@@ -1600,6 +1793,11 @@ class ReviewAgent:
             )
         if not assignment:
             assignment = self._extract_assignment_payload(str(context.get("text") or "")).strip()
+        packaging_script_update = self._extract_packaging_script_update(str(context.get("text") or ""))
+        if packaging_script_update and (
+            not assignment or "package_script_path" in assignment or "packaging.script" not in assignment
+        ):
+            assignment = f"packaging.script={packaging_script_update}"
         if not assignment:
             return AgentResponse(
                 "要改哪个配置？请给我类似 submission.version_code=10002 的字段和值。",
@@ -1649,7 +1847,7 @@ class ReviewAgent:
         image_text = self._get_last_image_text(session)
         if not image_text:
             return AgentResponse(
-                "最近图片还没有可用于分析的 OCR 文本。请先发送一张包含驳回原因的截图。",
+                _format_error_message("图片分析缺少 OCR 文本", "最近图片还没有可用于分析的 OCR 文本。", ["请先发送一张包含驳回原因的截图。"]),
                 {"intent": "analyze_last_image", "missing": "ocr_text"},
             )
         return self.analyze_rejection_text(
@@ -1885,6 +2083,27 @@ class ReviewAgent:
             return {}
         return raw if isinstance(raw, dict) else {}
 
+    def _format_packaging_config_summary(self) -> str:
+        config_path = self.packaging_config_path
+        if not config_path or not config_path.exists():
+            return ""
+        try:
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return ""
+        packaging = raw.get("packaging") or {}
+        if not isinstance(packaging, dict):
+            return ""
+        lines = [
+            f"当前打包配置（{config_path.name}）：",
+            f"- 项目目录：{packaging.get('project_dir') or '未配置'}",
+            f"- 打包脚本：{packaging.get('script') or packaging.get('script_path') or '未配置'}",
+            f"- 批量清单：{packaging.get('batch_file') or '未配置'}",
+            f"- packlist 快照：{packaging.get('packlist_scan_file') or packaging.get('packlist_snapshot') or '未配置'}",
+            f"- Node：{packaging.get('node_command') or 'node'}",
+        ]
+        return "\n".join(lines)
+
     def analyze_rejection_text(
         self,
         session_id: str,
@@ -1971,7 +2190,7 @@ class ReviewAgent:
 
         if self._contains_any(lowered, ("竞品", "应用商店", "应用市场", "下载量")):
             return AgentResponse(
-                "有竞品搜索能力。可以发送“搜索竞品：关键词”查询同类 APP；发送“记录竞品下载：关键词”会把本月能拿到的公开指标写入当前会话。"
+                "有应用商店查询能力，也支持竞品分析。可以发送“搜索应用商店：关键词”查询指定 APP 公开指标；发送“搜索竞品：关键词”查询同类 APP；只有发送“记录竞品下载：关键词”才会写入月度记录。"
                 "\n注意：不同商店公开数据不一样，下载量和评分可能会有缺失或查询失败。",
                 {"intent": "capability_question", "capability": "market_search", "configured": True},
             )
@@ -2022,6 +2241,42 @@ class ReviewAgent:
             )
         )
 
+    @staticmethod
+    def _looks_like_packaging_catalog_request(text: str) -> bool:
+        return (
+            any(term in text for term in ("打包", "查包", "包", "渠道"))
+            and any(term in text for term in ("都可以", "都能", "全部", "所有", "完整", "列表"))
+        ) or any(
+            term in text
+            for term in (
+                "都可以打那些包",
+                "都可以打哪些包",
+                "可以打那些包",
+                "可以打哪些包",
+                "全部包",
+                "所有包",
+                "包列表",
+            )
+        )
+
+    @staticmethod
+    def _looks_like_packaging_pagination_request(text: str) -> bool:
+        return any(
+            term in text
+            for term in (
+                "还有呢",
+                "下一页",
+                "继续",
+                "后面的",
+                "后面还有",
+                "更高年级",
+                "没有回复完全",
+                "没回复完全",
+                "没说完",
+                "接着发",
+            )
+        )
+
     def _configured_image_analysis_url(self, key: str) -> str:
         if not self.oppo_config_path or not self.oppo_config_path.exists():
             return ""
@@ -2055,6 +2310,26 @@ class ReviewAgent:
         analysis = session.get("last_rejection_analysis") or {}
         app_info = session.get("app_info") or {}
         return str(analysis.get("similar_app") or app_info.get("app_name") or "").strip()
+
+    def _answer_config_followup_question(self, session_id: str, text: str) -> AgentResponse | None:
+        if not any(term in text for term in ("哪个文件", "那个文件", "哪里改", "哪儿改", "修改哪个文件")):
+            return None
+        session = self.state_store.get_session(session_id)
+        pending = session.get("pending_config_patch") or {}
+        if not pending:
+            return None
+        if any(path.startswith("packaging.") for path in pending):
+            config_path = self.packaging_config_path or (self.oppo_config_path.parent / "packaging.json" if self.oppo_config_path else None)
+            target_value = next((str(value) for key, value in pending.items() if key == "packaging.script"), "")
+            return AgentResponse(
+                "这次要改的是打包配置文件里的 `packaging.script` 字段。"
+                + (f"\n- 文件：{config_path}" if config_path else "")
+                + "\n- 字段：packaging.script"
+                + (f"\n- 目标值：{target_value}" if target_value else "")
+                + "\n如果直接在飞书里继续操作，发送“确认保存配置”就会写入。",
+                {"intent": "config_followup", "scope": "packaging", "pending": pending},
+            )
+        return None
 
     @staticmethod
     def _extract_generic_app_search_query(text: str) -> str:
@@ -2158,7 +2433,7 @@ class ReviewAgent:
         lowered = text.lower()
         market_terms = ("竞品", "对标", "同类", "同类型", "类似", "应用商店", "应用", "app", "软件")
         search_terms = ("找", "搜索", "查", "看看", "有哪些", "分析", "调研", "研究")
-        record_terms = ("记录", "保存", "月度", "每月", "月报", "下载量", "下载数据", "指标")
+        record_terms = ("记录", "保存", "月度", "每月", "月报")
         has_market_context = any(term in lowered for term in market_terms)
         if not has_market_context:
             return None
@@ -2262,19 +2537,42 @@ class ReviewAgent:
         }
 
     @staticmethod
+    def _format_record_app_info(app_info: JsonDict) -> str:
+        return (
+            "应用信息已记录\n"
+            "\n应用信息：\n"
+            f"- 应用名：{app_info.get('app_name') or '未提供'}\n"
+            f"- 包名：{app_info.get('pkg_name') or '未提供'}\n"
+            f"- 版本号：{app_info.get('version_code') or '未提供'}"
+        )
+
+    @staticmethod
     def _format_rejection_analysis(analysis: JsonDict) -> str:
-        lines = ["驳回分析："]
+        lines = ["驳回分析"]
         conclusion = "可以尝试提交" if analysis.get("can_resubmit_same_apk") else "不建议原包直接重提"
+        lines.append("")
+        lines.append("结论：")
         lines.append(f"- 结论：{conclusion}")
+        details_added = False
         if analysis.get("similarity_score") is not None:
+            if not details_added:
+                lines.append("")
+                lines.append("识别信息：")
+                details_added = True
             lines.append(f"- APK 相似度：{analysis['similarity_score']}")
         if analysis.get("similar_app"):
+            if not details_added:
+                lines.append("")
+                lines.append("识别信息：")
+                details_added = True
             lines.append(f"- 疑似相似应用：{analysis['similar_app']}")
         if analysis.get("required_actions"):
+            lines.append("")
             lines.append("需要做：")
             lines.extend(f"- {item}" for item in analysis["required_actions"][:3])
         if analysis.get("evidence_targets"):
             targets = [target.replace("OPPO backend: ", "") for target in analysis["evidence_targets"]]
+            lines.append("")
             lines.append("上传位置：" + " / ".join(targets))
         return "\n".join(lines)
 
@@ -2294,7 +2592,7 @@ class ReviewAgent:
         market_line = ""
         if market_search:
             market_line = (
-                f"\n- 最近竞品搜索：{market_search.get('query') or '已记录'}"
+                f"\n- 最近应用商店查询：{market_search.get('query') or '已记录'}"
                 f"（{len(market_search.get('apps') or [])} 个结果）"
             )
         snapshots = session.get("market_download_snapshots") or {}
@@ -2309,10 +2607,12 @@ class ReviewAgent:
         memory_line = f"\n- 长期记忆：{memory_count} 条" if memory_count else ""
         structured_line = f"\n- 结构化偏好：{preference_count} 类" if preference_count else ""
         return (
-            "当前会话状态：\n"
+            "当前会话状态\n"
+            "\n应用信息：\n"
             f"- 应用名：{app_info.get('app_name') or '未记录'}\n"
             f"- 包名：{app_info.get('pkg_name') or '未记录'}\n"
             f"- 版本号：{app_info.get('version_code') or '未记录'}\n"
+            "\n进度概览：\n"
             f"- 是否建议同包重提："
             f"{'未知' if not analysis else ('是' if analysis.get('can_resubmit_same_apk') else '否')}"
             f"{image_line}"
@@ -2354,12 +2654,7 @@ class ReviewAgent:
             "unknown": "未知",
         }.get(str(status.get("review_state")), str(status.get("review_state") or "未知"))
         audit_text = app_info.get("audit_status_name") or app_info.get("state_name") or state_label
-        lines = [
-            "OPPO 审核状态：",
-            f"- 应用：{status.get('pkg_name')}",
-            f"- 版本：{status.get('version_code')}",
-            f"- 状态：{audit_text}",
-        ]
+        lines = ["OPPO 审核状态", "", "应用信息：", f"- 应用：{status.get('pkg_name')}", f"- 版本：{status.get('version_code')}", "", "审核结果：", f"- 状态：{audit_text}"]
         if task.get("error"):
             lines.append(f"- 提交任务：查询失败（{_shorten(task['error'])}）")
         elif task:
@@ -2374,8 +2669,7 @@ class ReviewAgent:
 
     @staticmethod
     def _format_submission_check(validation: JsonDict, session: JsonDict) -> str:
-        lines = ["提交检查："]
-        lines.append(f"- 配置文件：{'通过' if validation.get('valid') else '不通过'}")
+        lines = ["提交检查", "", "检查结果：", f"- 配置文件：{'通过' if validation.get('valid') else '不通过'}"]
         missing_fields = validation.get("missing_required_fields") or []
         missing_files = validation.get("missing_files") or []
         if missing_fields:
@@ -2384,10 +2678,14 @@ class ReviewAgent:
             lines.append("- 缺文件：" + "、".join(str(item) for item in missing_files[:5]))
         analysis = session.get("last_rejection_analysis") or {}
         if analysis and not analysis.get("can_resubmit_same_apk"):
+            lines.append("")
+            lines.append("风险提示：")
             lines.append("- 风险：最近驳回分析显示不建议原包直接重提")
         checklist = session.get("remediation_checklist") or ReviewAgent._build_remediation_items(analysis)
         if checklist:
             lines.append(f"- 整改待办：{len(checklist)} 项，发送“整改清单”查看")
+        lines.append("")
+        lines.append("结论：")
         if validation.get("valid") and not (analysis and not analysis.get("can_resubmit_same_apk")):
             lines.append("结论：可以进入人工确认提交步骤。")
         else:
@@ -2415,6 +2713,48 @@ class ReviewAgent:
             return self._run_packaging_lookup(session_id, text, {"intent": "package_lookup", "query": query})
         return None
 
+    def _handle_packaging_followup(self, session_id: str, text: str) -> AgentResponse | None:
+        if not self._looks_like_packaging_pagination_request(text):
+            return None
+        session = self.state_store.get_session(session_id)
+        lookup = session.get("last_package_lookup") or {}
+        matches = lookup.get("matches") or []
+        if not matches:
+            return None
+        return self._render_packaging_lookup_page(
+            session_id,
+            query=str(lookup.get("query") or ""),
+            matches=matches,
+            offset=int(lookup.get("next_offset") or 0),
+            page_size=int(lookup.get("page_size") or 10),
+            heading=str(lookup.get("heading") or ""),
+        )
+
+    def _handle_packaging_catalog_request(self, session_id: str, text: str) -> AgentResponse | None:
+        lowered = text.lower()
+        if not self._looks_like_packaging_catalog_request(lowered):
+            return None
+        try:
+            entries = self._all_packaging_entries()
+        except Exception as exc:
+            return AgentResponse(
+                _format_error_message("读取可打包列表失败", str(exc), ["检查 packaging.project_dir 或 packlist 快照配置。"]),
+                {"intent": "package_lookup", "error": str(exc)},
+            )
+        if not entries:
+            return AgentResponse(
+                _format_error_message("没有可用打包包信息", "当前 packlist 里还没有可用的打包包信息。", ["检查 packlist.xls 或 packlist-scan.json。"]),
+                {"intent": "package_lookup", "matches": []},
+            )
+        return self._render_packaging_lookup_page(
+            session_id,
+            query="全部",
+            matches=[entry.to_dict() for entry in entries],
+            offset=0,
+            page_size=10,
+            heading=f"当前可打包包列表（共 {len(entries)} 个）：",
+        )
+
     def _run_packaging_intent(self, session_id: str, text: str, decision: JsonDict) -> AgentResponse | None:
         parsed = parse_package_request(text)
         dry_run = bool(decision.get("dry_run")) or bool(parsed.get("dry_run"))
@@ -2437,7 +2777,7 @@ class ReviewAgent:
             )
         except Exception as exc:
             return AgentResponse(
-                f"打包失败：{exc}",
+                _format_error_message("打包失败", str(exc), ["检查 packaging.project_dir、packaging.script 和 packlist 配置。", "修正后重新发送打包指令。"]),
                 {"intent": "package_apk" if not parsed.get("batch") else "batch_package", "error": str(exc)},
             )
 
@@ -2448,52 +2788,90 @@ class ReviewAgent:
         )
 
     def _looks_like_packaging_lookup(self, text: str) -> bool:
-        return self._contains_any(text, ("查包", "查渠道", "对应什么包", "是什么包", "是什么渠道", "包名", "渠道名"))
+        return self._contains_any(
+            text,
+            (
+                "查包",
+                "查渠道",
+                "对应什么包",
+                "是什么包",
+                "是什么渠道",
+                "包名",
+                "渠道名",
+                "有哪些包",
+                "那些包",
+                "哪些包",
+                "什么年级的包",
+                "都有那些年级的包",
+                "都有哪些年级的包",
+                "那些年级的包",
+                "哪些年级的包",
+                "都有那些包",
+                "都有哪些包",
+            ),
+        )
 
     def _run_packaging_lookup(self, session_id: str, text: str, decision: JsonDict) -> AgentResponse | None:
         query = str(decision.get("app_name") or decision.get("query") or self._extract_packaging_lookup_query(text)).strip()
         if not query:
             return AgentResponse(
-                "请告诉我应用名，比如“八年级语文下册”或“帮我查四年级英语上册对应什么包”。",
+                _format_error_message(
+                    "查包缺少应用名",
+                    "没有识别到要查询的应用名。",
+                    ["请告诉我应用名，比如“八年级语文下册”或“帮我查四年级英语上册对应什么包”。"],
+                ),
                 {"intent": "package_lookup", "missing": "query"},
             )
         try:
             matches = self._resolve_packaging_lookup(query)
         except Exception as exc:
-            return AgentResponse(f"查包失败：{exc}", {"intent": "package_lookup", "error": str(exc)})
+            return AgentResponse(
+                _format_error_message("查包失败", str(exc), ["检查 packaging.project_dir 或 packlist 快照配置。"]),
+                {"intent": "package_lookup", "error": str(exc)},
+            )
         if not matches:
             return AgentResponse(
-                f"没找到和“{query}”对应的包。",
+                _format_error_message("未找到对应包", f"没找到和“{query}”对应的包。", ["换一个更完整的应用名再查。", "也可以发送“都可以打哪些包”查看列表。"]),
                 {"intent": "package_lookup", "query": query, "matches": []},
             )
-        lines = [f"查到 {query} 对应的包："]
-        for entry in matches[:8]:
-            lines.extend(
-                [
-                    f"- 应用名：{entry.app_name}",
-                    f"  包名：{entry.pkg_name}",
-                    f"  渠道：{entry.channel}",
-                    f"  版本号：{entry.version_code}",
-                    f"  版本名：{entry.version_name}",
-                ]
-            )
-        if len(matches) == 1:
-            lines.append("如果要直接打包，可以说“打包这个应用”或“打包这个包”。")
-        data = {"intent": "package_lookup", "query": query, "matches": [entry.to_dict() for entry in matches]}
-        self.state_store.update_session(
+        return self._render_packaging_lookup_page(
             session_id,
-            {"last_package_lookup": {"query": query, "matches": data["matches"]}},
+            query=query,
+            matches=[entry.to_dict() for entry in matches],
+            offset=0,
+            page_size=10,
         )
-        return AgentResponse("\n".join(lines), data)
 
     def _extract_packaging_lookup_query(self, text: str) -> str:
         payload = self._extract_payload(text)
         if payload:
             return payload
         clean = re.sub(r"^(帮我|请|麻烦|能不能|可以|我要|我想|帮我查|帮我找)\s*", "", text)
-        clean = re.sub(r"(对应什么包|是什么包|是什么渠道|查包|查渠道|这个包|这个应用|包名|渠道名)", "", clean)
+        clean = re.sub(r"(你一个个查|查一下|查下|查询一下|查询|查一查|帮我查|帮我找|看一下|看下)", "", clean)
+        clean = re.sub(
+            r"(对应什么包|是什么包|是什么渠道|查包|查渠道|这个包|这个应用|包名|渠道名|都有那些包|都有哪些包|有哪些包|那些包|哪些包|什么年级的包|都有那些年级的包|都有哪些年级的包|那些年级的包|哪些年级的包)",
+            "",
+            clean,
+        )
         clean = re.sub(r"[：:，,。！？?\s]+", " ", clean).strip()
         return clean
+
+    @staticmethod
+    def _extract_packaging_script_update(text: str) -> str:
+        clean = str(text or "").strip()
+        if not clean or "package.js" not in clean.lower():
+            return ""
+        if not any(term in clean for term in ("路径", "脚本", "package.js", "打包脚本")):
+            return ""
+        match = re.search(r"([A-Za-z]:[\\/][^\s，,。；;\"'`]+package\.js)", clean, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+        assignment = re.search(r"(?:packaging\.script|script|script_path|package_script_path)\s*=\s*(.+)$", clean, flags=re.IGNORECASE)
+        if assignment:
+            value = assignment.group(1).strip().strip("\"'")
+            if value.lower().endswith("package.js"):
+                return value
+        return ""
 
     def _packaging_project_dir(self) -> Path:
         if self.packaging_agent.settings.project_dir:
@@ -2509,6 +2887,76 @@ class ReviewAgent:
                 raise primary_exc
             entries = scan_packlist_snapshot(snapshot)
             return resolve_packlist_app_name_entries(entries, query)
+
+    def _all_packaging_entries(self):
+        try:
+            return scan_packlist(self._packaging_project_dir())
+        except Exception as primary_exc:
+            snapshot = self._packaging_packlist_snapshot()
+            if not snapshot:
+                raise primary_exc
+            return scan_packlist_snapshot(snapshot)
+
+    def _render_packaging_lookup_page(
+        self,
+        session_id: str,
+        *,
+        query: str,
+        matches: list[JsonDict],
+        offset: int,
+        page_size: int,
+        heading: str = "",
+    ) -> AgentResponse:
+        total = len(matches)
+        safe_page_size = max(1, page_size)
+        safe_offset = max(0, min(offset, total))
+        page = matches[safe_offset : safe_offset + safe_page_size]
+        if not page:
+            return AgentResponse(
+                "已经没有更多结果了。",
+                {"intent": "package_lookup", "query": query, "matches": matches, "page_size": safe_page_size, "next_offset": total},
+            )
+
+        lines = ["查包结果", "", "查询条件：", f"- 关键词：{query}", f"- 总数：{total}", "", "包列表："]
+        for item in page:
+            lines.extend(
+                [
+                    f"- 应用名：{item.get('app_name') or ''}",
+                    f"  包名：{item.get('pkg_name') or ''}",
+                    f"  渠道：{item.get('channel') or ''}",
+                    f"  版本号：{item.get('version_code') or ''}",
+                    f"  版本名：{item.get('version_name') or ''}",
+                ]
+            )
+
+        next_offset = safe_offset + len(page)
+        lines.append("")
+        lines.append("分页：")
+        if total == 1:
+            lines.append("如果要直接打包，可以说“打包这个应用”或“打包这个包”。")
+        elif next_offset < total:
+            lines.append(f"已显示 {safe_offset + 1}-{next_offset} / 共 {total} 个，发送“还有呢”或“下一页”继续。")
+        else:
+            lines.append(f"已全部显示，共 {total} 个。")
+
+        data = {
+            "intent": "package_lookup",
+            "query": query,
+            "matches": matches,
+            "page_size": safe_page_size,
+            "next_offset": next_offset,
+        }
+        session_patch = {
+            "last_package_lookup": {
+                "query": query,
+                "matches": matches,
+                "page_size": safe_page_size,
+                "next_offset": next_offset,
+                "heading": heading or f"查到 {query} 对应的包：",
+            }
+        }
+        self.state_store.update_session(session_id, session_patch)
+        return AgentResponse("\n".join(lines), data)
 
     def _packaging_packlist_snapshot(self) -> Path | None:
         configured = self.packaging_agent.settings.packlist_scan_file
@@ -2580,10 +3028,11 @@ class ReviewAgent:
 
     @staticmethod
     def _format_remediation_checklist(items: list[str], analysis: JsonDict) -> str:
-        lines = ["整改清单："]
+        lines = ["整改清单", "", "待办项："]
         lines.extend(f"{index}. {item}" for index, item in enumerate(items, start=1))
         targets = [target.replace("OPPO backend: ", "") for target in analysis.get("evidence_targets") or []]
         if targets:
+            lines.append("")
             lines.append("上传位置：" + " / ".join(targets))
         return "\n".join(lines)
 
@@ -2625,10 +3074,18 @@ class ReviewAgent:
         return AppMarketSearchResult(query="", apps=[], errors=["unsupported market search result"])
 
     @staticmethod
-    def _format_market_search(result: AppMarketSearchResult, *, filtered_names: JsonDict | None = None) -> str:
-        lines = [f"应用商店竞品搜索：{result.query}"]
+    def _format_market_search(
+        result: AppMarketSearchResult,
+        *,
+        filtered_names: JsonDict | None = None,
+        source_text: str = "",
+    ) -> str:
+        title = "应用商店竞品搜索" if _looks_like_competitor_market_request(source_text) else "应用商店查询"
+        lines = [f"{title}", f"- 关键词：{result.query}"]
         filtered_names = filtered_names or {}
         if not result.apps:
+            lines.append("")
+            lines.append("查询结果：")
             if filtered_names.get("exact_match"):
                 lines.append(f"- 未找到与“{result.query}”精确匹配的结果。")
             else:
@@ -2636,25 +3093,30 @@ class ReviewAgent:
             dropped = filtered_names.get("dropped_names") or []
             if dropped:
                 lines.append("- 已排除：" + "、".join(str(item) for item in dropped[:6]))
-        for app in result.apps[:8]:
-            metrics = _format_market_metrics(app.to_dict())
-            developer = f" / {app.developer}" if app.developer else ""
-            category = f" / {app.category}" if app.category else ""
-            lines.append(f"- [{_store_label(app.store)}] {app.name}{developer}{category}：{metrics}")
+        else:
+            lines.append("")
+            lines.append("查询结果：")
+            for index, app in enumerate(result.apps[:8], start=1):
+                lines.extend(_format_market_listing(index, app.to_dict()))
         if result.store_statuses:
-            lines.append("已查询：")
+            lines.append("")
+            lines.append("查询状态：")
             lines.extend(_format_store_status(item) for item in result.store_statuses)
         if result.errors:
+            lines.append("")
             lines.append("部分商店查询失败：" + "；".join(result.errors[:3]))
+        lines.append("")
         lines.append("提示：发送“记录竞品下载：同一关键词”可把本月公开指标写入状态。")
         return "\n".join(lines)
 
     @staticmethod
     def _format_download_snapshot(snapshot: JsonDict, *, filtered_names: JsonDict | None = None) -> str:
-        lines = [f"已记录 {snapshot['month']} 竞品下载数据：{snapshot.get('query') or ''}"]
+        lines = ["竞品下载数据已记录", f"- 月份：{snapshot['month']}", f"- 关键词：{snapshot.get('query') or ''}"]
         filtered_names = filtered_names or {}
         apps = snapshot.get("apps") or []
         if not apps:
+            lines.append("")
+            lines.append("记录结果：")
             if filtered_names.get("exact_match"):
                 lines.append(f"- 未记录到与“{snapshot.get('query') or ''}”精确匹配的应用结果。")
             else:
@@ -2662,16 +3124,19 @@ class ReviewAgent:
             dropped = filtered_names.get("dropped_names") or []
             if dropped:
                 lines.append("- 已排除：" + "、".join(str(item) for item in dropped[:6]))
-        for app in apps[:8]:
-            lines.append(
-                f"- [{_store_label(app.get('store'))}] {app.get('name') or app.get('app_id')}: "
-                f"{_format_market_metrics(app)}"
-            )
+        else:
+            lines.append("")
+            lines.append("记录结果：")
+            for index, app in enumerate(apps[:8], start=1):
+                lines.extend(_format_market_listing(index, app))
         if snapshot.get("store_statuses"):
-            lines.append("已查询：")
+            lines.append("")
+            lines.append("查询状态：")
             lines.extend(_format_store_status(item) for item in snapshot["store_statuses"])
         if snapshot.get("errors"):
+            lines.append("")
             lines.append("部分商店查询失败：" + "；".join(str(item) for item in snapshot["errors"][:3]))
+        lines.append("")
         lines.append("说明：下载量只记录商店公开披露的数据；不公开精确下载量的商店会留空。")
         return "\n".join(lines)
 
@@ -2738,7 +3203,7 @@ def _format_supported_market_stores(disabled_stores: set[str] | None = None) -> 
     disabled = disabled_stores or set()
     active = [(store, label) for store, label in SUPPORTED_MARKET_STORES if store not in disabled]
     inactive = [(store, label) for store, label in SUPPORTED_MARKET_STORES if store in disabled]
-    lines = ["目前竞品搜索会尝试查询这些应用商店："]
+    lines = ["目前应用商店查询会尝试查询这些来源："]
     lines.extend(f"- {label}" for _, label in active)
     if inactive:
         lines.append("当前会话已按你的偏好排除：")
@@ -2869,7 +3334,12 @@ def _looks_like_other_market_stores_request(text: Any) -> bool:
 
 def _looks_like_market_download_request(text: Any) -> bool:
     clean = str(text or "").lower()
-    return any(term in clean for term in ("下载量", "下载数据", "下载次数", "指标", "记录", "月报"))
+    return any(term in clean for term in ("记录", "保存", "月报", "月度"))
+
+
+def _looks_like_competitor_market_request(text: Any) -> bool:
+    clean = str(text or "").lower()
+    return any(term in clean for term in ("竞品", "对标", "同类", "同类型", "类似", "相似", "赛道", "有哪些产品"))
 
 
 def _looks_like_recent_context_question(text: Any) -> bool:
@@ -2978,6 +3448,108 @@ def _format_market_metrics(app: JsonDict) -> str:
     return f"{download_part}，评分 {rating}{count_part}"
 
 
+def _format_market_listing(index: int, app: JsonDict) -> list[str]:
+    store = _store_label(app.get("store"))
+    name = str(app.get("name") or app.get("app_id") or "未命名应用")
+    developer = str(app.get("developer") or "").strip()
+    category = str(app.get("category") or "").strip()
+    lines = [f"{index}. {name}", f"   - 商店：{store}", f"   - 指标：{_format_market_metrics(app)}"]
+    if developer:
+        lines.append(f"   - 开发者：{developer}")
+    if category:
+        lines.append(f"   - 分类：{category}")
+    return lines
+
+
+def _looks_like_structured_reply(text: Any) -> bool:
+    value = str(text or "").strip()
+    if not value:
+        return False
+    first_line = value.splitlines()[0].strip()
+    known_titles = {
+        "回复",
+        "已记录",
+        "还没理解清楚",
+        "处理结果",
+        "最近对话",
+        "当前状态",
+        "当前默认应用",
+        "应用商店查询",
+        "应用商店竞品搜索",
+        "竞品下载数据已记录",
+        "打包结果",
+        "批量打包结果",
+        "打包应用查询",
+        "提交检查",
+        "整改清单",
+        "驳回原因分析结果",
+        "OPPO 审核状态",
+        "提交配置",
+        "配置修改已暂存",
+        "材料已绑定",
+    }
+    if first_line in known_titles:
+        return True
+    section_markers = (
+        "\n\n说明：",
+        "\n\n结果：",
+        "\n\n记录内容：",
+        "\n\n下一步：",
+        "\n\n查询结果：",
+        "\n\n查询状态：",
+        "\n\n应用信息：",
+        "\n\n检查结果：",
+        "\n\n处理建议：",
+        "\n\n包列表：",
+        "\n\n失败原因：",
+    )
+    return any(marker in value for marker in section_markers)
+
+
+def _format_llm_free_reply(intent: str, reply: Any) -> str:
+    text = str(reply or "").strip()
+    if not text:
+        return ""
+    if _looks_like_structured_reply(text):
+        return text
+    if intent == "remember":
+        return "\n".join(["已记录", "", "记录内容：", f"- {_shorten(text, 800)}"])
+    if intent in {"unknown", "disabled"}:
+        return "\n".join(
+            [
+                "还没理解清楚",
+                "",
+                "说明：",
+                f"- {_shorten(text, 800)}",
+                "",
+                "下一步：",
+                "- 可以换个说法，或发送“帮助”查看可用场景。",
+            ]
+        )
+    return "\n".join(["回复", "", "说明：", f"- {_shorten(text, 800)}"])
+
+
+def _format_tool_summary_reply(summary: Any) -> str:
+    text = str(summary or "").strip()
+    if not text:
+        return ""
+    if _looks_like_structured_reply(text):
+        return text
+    if "\n" in text:
+        return "\n".join(["处理结果", "", text])
+    return "\n".join(["处理结果", "", "说明：", f"- {_shorten(text, 1000)}"])
+
+
+def _format_error_message(title: str, reason: Any, next_steps: list[str] | None = None) -> str:
+    lines = [title, "", "原因：", f"- {_shorten(reason, 500) or '未知原因'}"]
+    steps = next_steps or []
+    if steps:
+        lines.append("")
+        lines.append("下一步：")
+        lines.extend(f"- {step}" for step in steps)
+    return "\n".join(lines)
+
+
 def _format_store_status(status: JsonDict) -> str:
     store = _store_label(status.get("store"))
     result_count = int(status.get("result_count") or 0)
@@ -2997,6 +3569,36 @@ def _json_safe(value: Any) -> Any:
         return json.loads(json.dumps(value, ensure_ascii=False, default=str))
     except (TypeError, ValueError):
         return str(value)
+
+
+def _redact_for_trace(value: Any, *, max_string: int = 4000) -> Any:
+    sensitive_markers = (
+        "api_key",
+        "client_secret",
+        "app_secret",
+        "token",
+        "authorization",
+        "x-api-key",
+        "ocr_api_key",
+        "secret",
+        "password",
+    )
+    if isinstance(value, dict):
+        redacted: JsonDict = {}
+        for key, item in value.items():
+            key_text = str(key).lower()
+            if any(marker in key_text for marker in sensitive_markers):
+                redacted[str(key)] = "***REDACTED***"
+            else:
+                redacted[str(key)] = _redact_for_trace(item, max_string=max_string)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_for_trace(item, max_string=max_string) for item in value]
+    if isinstance(value, tuple):
+        return [_redact_for_trace(item, max_string=max_string) for item in value]
+    if isinstance(value, str):
+        return _shorten(value, max_string)
+    return _json_safe(value)
 
 
 def _optional_confidence(value: Any) -> float | None:

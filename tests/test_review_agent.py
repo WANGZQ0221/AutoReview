@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -585,6 +586,141 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertNotIn("我可以协助 OPPO 审核提交流程", response.text)
             self.assertEqual(response.data["capability"], "packaging")
 
+    def test_package_lookup_paginates_subject_results(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = base / "config.json"
+            project_dir = base / "android-project"
+            project_dir.mkdir()
+            snapshot_path = base / "packlist-scan.json"
+            entries = []
+            for idx in range(12):
+                entries.append(
+                    {
+                        "sheet": "CfgGameConfig",
+                        "row": 50 + idx,
+                        "channel": f"xm20{idx:02d}",
+                        "app_name": f"{idx + 1}年级语文上册",
+                        "pkg_name": f"com.pelbs.book20{idx:02d}",
+                        "version_code": "68",
+                        "version_name": f"3.20{idx:02d}.38.2",
+                    }
+                )
+            snapshot_path.write_text(json.dumps({"ok": True, "result": entries}, ensure_ascii=False), encoding="utf-8")
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                            "packlist_scan_file": str(snapshot_path),
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (base / "package.js").write_text("", encoding="utf-8")
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), oppo_config_path=config_path)
+
+            response = agent.handle_message("chat-1", "语文都有那些年级的包？")
+
+            self.assertIn("共 12 个", response.text)
+            self.assertIn("发送“还有呢”或“下一页”继续", response.text)
+            self.assertIn("应用名：1年级语文上册", response.text)
+            self.assertIn("应用名：10年级语文上册", response.text)
+            self.assertNotIn("应用名：11年级语文上册", response.text)
+
+    def test_package_lookup_followup_returns_next_page(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = base / "config.json"
+            project_dir = base / "android-project"
+            project_dir.mkdir()
+            snapshot_path = base / "packlist-scan.json"
+            entries = []
+            for idx in range(12):
+                entries.append(
+                    {
+                        "sheet": "CfgGameConfig",
+                        "row": 80 + idx,
+                        "channel": f"xm30{idx:02d}",
+                        "app_name": f"{idx + 1}年级语文下册",
+                        "pkg_name": f"com.pelbs.book30{idx:02d}",
+                        "version_code": "68",
+                        "version_name": f"3.30{idx:02d}.38.2",
+                    }
+                )
+            snapshot_path.write_text(json.dumps({"ok": True, "result": entries}, ensure_ascii=False), encoding="utf-8")
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                            "packlist_scan_file": str(snapshot_path),
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (base / "package.js").write_text("", encoding="utf-8")
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), oppo_config_path=config_path)
+
+            agent.handle_message("chat-1", "语文都有那些年级的包？")
+            response = agent.handle_message("chat-1", "还有呢？")
+
+            self.assertIn("应用名：11年级语文下册", response.text)
+            self.assertIn("应用名：12年级语文下册", response.text)
+            self.assertIn("已全部显示，共 12 个", response.text)
+            self.assertNotIn("应用名：1年级语文下册", response.text)
+
+    def test_packaging_catalog_request_lists_all_packages_with_pagination(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = base / "config.json"
+            project_dir = base / "android-project"
+            project_dir.mkdir()
+            snapshot_path = base / "packlist-scan.json"
+            entries = []
+            for idx in range(11):
+                entries.append(
+                    {
+                        "sheet": "CfgGameConfig",
+                        "row": 100 + idx,
+                        "channel": f"xm40{idx:02d}",
+                        "app_name": f"教材{idx + 1}",
+                        "pkg_name": f"com.pelbs.book40{idx:02d}",
+                        "version_code": "68",
+                        "version_name": f"3.40{idx:02d}.38.2",
+                    }
+                )
+            snapshot_path.write_text(json.dumps({"ok": True, "result": entries}, ensure_ascii=False), encoding="utf-8")
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                            "packlist_scan_file": str(snapshot_path),
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (base / "package.js").write_text("", encoding="utf-8")
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), oppo_config_path=config_path)
+
+            response = agent.handle_message("chat-1", "查一下，都可以打那些包？")
+
+            self.assertIn("查包结果", response.text)
+            self.assertIn("- 关键词：全部", response.text)
+            self.assertIn("- 总数：11", response.text)
+            self.assertIn("应用名：教材1", response.text)
+            self.assertIn("发送“还有呢”或“下一页”继续", response.text)
+
     def test_query_oppo_status_remembers_app_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = self._write_minimal_config(Path(temp_dir))
@@ -648,9 +784,12 @@ class ReviewAgentTest(unittest.TestCase):
             session = agent.state_store.get_session("chat-1")
 
             self.assertIn("应用商店竞品搜索", response.text)
+            self.assertIn("查询结果：", response.text)
+            self.assertIn("1. 四级单词竞品", response.text)
+            self.assertIn("   - 商店：Google Play", response.text)
             self.assertIn("四级单词竞品", response.text)
             self.assertEqual(session["last_market_search"]["query"], "英语四级单词")
-            self.assertIn("最近竞品搜索", status)
+            self.assertIn("最近应用商店查询", status)
 
     def test_market_search_exact_match_filters_out_variants(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -705,6 +844,35 @@ class ReviewAgentTest(unittest.TestCase):
 
             self.assertEqual(searcher.calls[0]["stores"], {"oppo_app_market"})
 
+    def test_market_download_query_is_not_auto_recorded(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            searcher = FakeVariantMarketSearcher()
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "market_download_snapshot",
+                    "confidence": 0.9,
+                    "arguments": {
+                        "query": "抖音",
+                        "target_stores": ["xiaomi_app_store"],
+                    },
+                }
+            )
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: searcher,
+                llm_client=llm,
+            )
+
+            response = agent.handle_message("chat-1", "帮我查一下小米应用市场，抖音的下载量", "user-1")
+            session = agent.state_store.get_session("chat-1")
+
+            self.assertIn("应用商店查询", response.text)
+            self.assertIn("- 关键词：抖音", response.text)
+            self.assertNotIn("已记录", response.text)
+            self.assertEqual(searcher.calls[0]["stores"], {"xiaomi_app_store"})
+            self.assertNotIn("market_download_snapshots", session)
+            self.assertEqual(response.data["tool_call"]["tool"], "market_search")
+
     def test_market_followup_reuses_previous_query_for_other_stores(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             searcher = FakeVariantMarketSearcher()
@@ -743,7 +911,8 @@ class ReviewAgentTest(unittest.TestCase):
             agent.handle_message("chat-1", "你现在搜索一下OPPO应用商店，看下抖音这个APP的下载量是多少")
             response = agent.handle_message("chat-1", "我之前发给你的信息是什么？")
 
-            self.assertIn("最近你发给我的内容是", response.text)
+            self.assertIn("最近对话", response.text)
+            self.assertIn("最近你发给我的内容", response.text)
             self.assertIn("抖音", response.text)
 
     def test_llm_tool_call_executes_packaging_and_summarizes_result(self):
@@ -763,10 +932,47 @@ class ReviewAgentTest(unittest.TestCase):
             response = agent.handle_message("chat-1", "先给八年级语文下册出一个测试包")
 
             self.assertIn("打包预演", llm.summary_calls[0][3]["text"])
+            self.assertIn("处理结果", response.text)
             self.assertIn("已按八年级语文下册", response.text)
             self.assertEqual(fake_packaging.package_one_calls[0]["app_name"], "八年级语文下册")
             self.assertTrue(fake_packaging.package_one_calls[0]["dry_run"])
             self.assertEqual(response.data["tool_call"]["tool"], "package_apk")
+
+    def test_full_chain_trace_records_llm_tool_and_summary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            fake_packaging = FakePackagingAgent()
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "package_apk",
+                    "confidence": 0.93,
+                    "arguments": {"app_name": "八年级语文下册", "dry_run": True},
+                    "api_key": "should-not-leak",
+                },
+                tool_summary="已完成打包预演。",
+            )
+            state = JsonStateStore(base / "state.json")
+            agent = ReviewAgent(state, llm_client=llm)
+            agent.packaging_agent = fake_packaging
+
+            response = agent.handle_message("chat-1", "先给八年级语文下册出一个测试包", "user-1")
+
+            today = time.strftime("%Y-%m-%d")
+            trace_path = base / "sessions" / "chat-1" / f"trace-{today}.jsonl"
+            trace = json.loads(trace_path.read_text(encoding="utf-8").splitlines()[-1])
+            event_types = [event["type"] for event in trace["events"]]
+
+            self.assertIn("已完成打包预演", response.text)
+            self.assertEqual(trace["user_message"], "先给八年级语文下册出一个测试包")
+            self.assertIn("llm_tool_choice_request", event_types)
+            self.assertIn("llm_tool_choice_response", event_types)
+            self.assertIn("tool_execute_request", event_types)
+            self.assertIn("tool_execute_response", event_types)
+            self.assertIn("llm_tool_summary_request", event_types)
+            self.assertIn("llm_tool_summary_response", event_types)
+            self.assertIn("final_response", trace)
+            self.assertNotIn("should-not-leak", json.dumps(trace, ensure_ascii=False))
+            self.assertIn("***REDACTED***", json.dumps(trace, ensure_ascii=False))
 
     def test_llm_tool_call_can_view_and_stage_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -885,7 +1091,7 @@ class ReviewAgentTest(unittest.TestCase):
 
             response = agent.handle_message("chat-1", "搜索应用：王者荣耀", "user-1")
 
-            self.assertIn("已查询：", response.text)
+            self.assertIn("查询状态：", response.text)
             self.assertIn("- Apple App Store：8 个结果", response.text)
             self.assertIn("- 小米应用商店：1 个结果", response.text)
             self.assertIn("- 华为 AppGallery：未解析到匹配结果", response.text)
@@ -904,7 +1110,9 @@ class ReviewAgentTest(unittest.TestCase):
             snapshots = session["market_download_snapshots"]
             snapshot = next(iter(snapshots.values()))
 
-            self.assertIn("已记录", response.text)
+            self.assertIn("竞品下载数据已记录", response.text)
+            self.assertIn("记录结果：", response.text)
+            self.assertIn("1. 四级单词竞品", response.text)
             self.assertIn("1,000,000+", response.text)
             self.assertEqual(snapshot["query"], "英语四级单词")
             self.assertEqual(snapshot["apps"][0]["downloads"], 1000000)
@@ -931,7 +1139,8 @@ class ReviewAgentTest(unittest.TestCase):
 
             response = agent.handle_message("chat-1", "搜索竞品：。", "user-1")
 
-            self.assertIn("请提供有效", response.text)
+            self.assertIn("应用商店查询缺少关键词", response.text)
+            self.assertIn("没有识别到有效的应用名或关键词", response.text)
             self.assertNotIn("应用商店竞品搜索：。", response.text)
 
     def test_llm_chat_decision_wins_over_generic_search_rule(self):
@@ -950,6 +1159,7 @@ class ReviewAgentTest(unittest.TestCase):
             response = agent.handle_message("chat-1", "搜索，王者荣耀", "user-1")
 
             self.assertEqual(response.data["intent"], "chat")
+            self.assertIn("回复", response.text)
             self.assertIn("不需要调用工具", response.text)
             self.assertNotIn("应用商店竞品搜索", response.text)
             self.assertEqual(len(llm.calls), 1)
@@ -979,8 +1189,9 @@ class ReviewAgentTest(unittest.TestCase):
 
             response = agent.handle_message("chat-1", "找一下这个应用相似的应用。", "user-1")
 
-            self.assertIn("应用商店竞品搜索：示例应用", response.text)
-            self.assertNotIn("应用商店竞品搜索：这个", response.text)
+            self.assertIn("应用商店竞品搜索", response.text)
+            self.assertIn("- 关键词：示例应用", response.text)
+            self.assertNotIn("- 关键词：这个", response.text)
 
     def test_semantic_market_search_understands_natural_language(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1071,8 +1282,8 @@ class ReviewAgentTest(unittest.TestCase):
             status = agent.handle_message("chat-1", "输出当前记录").text
 
             self.assertEqual(response.data["intent"], "capability_question")
-            self.assertIn("有竞品搜索能力", response.text)
-            self.assertNotIn("最近竞品搜索", status)
+            self.assertIn("有应用商店查询能力", response.text)
+            self.assertNotIn("最近应用商店查询", status)
             self.assertIn("当前会话", status)
 
     def test_market_store_scope_question_lists_supported_stores(self):
@@ -1253,7 +1464,8 @@ class ReviewAgentTest(unittest.TestCase):
 
             response = agent.handle_message("chat-1", "清空当前记录")
 
-            self.assertIn("已清空当前会话记录", response.text)
+            self.assertIn("会话记录已清空", response.text)
+            self.assertIn("当前会话记录已清空", response.text)
             self.assertEqual(state.get_session("chat-1"), {})
             self.assertEqual(state.get_session("chat-2")["app_info"]["app_name"], "B")
 
@@ -1267,7 +1479,7 @@ class ReviewAgentTest(unittest.TestCase):
             response = agent.handle_message("chat-1", "清空所有记录")
             raw = state.load()
 
-            self.assertIn("已清空全部会话记录", response.text)
+            self.assertIn("全部会话记录已清空", response.text)
             self.assertEqual(raw["sessions"], {})
 
     def test_semantic_status_and_submission_check_requests_use_oppo_agent(self):
@@ -1362,11 +1574,29 @@ class ReviewAgentTest(unittest.TestCase):
             status = agent.handle_message("chat-1", "状态").text
             session = agent.state_store.get_session("chat-1")
 
+            self.assertIn("已记录", response.text)
             self.assertIn("我记住了", response.text)
             self.assertEqual(session["agent_memory"], ["default_app: 默认应用是英语四级单词"])
             self.assertEqual(session["long_term_memory"]["app_info"]["app_name"], "英语四级单词")
             self.assertEqual(session["long_term_memory"]["preferences"]["tone"], "简洁")
             self.assertIn("长期记忆：1 条", status)
+
+    def test_llm_low_confidence_reply_is_lightly_formatted(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            llm = FakeLlmClient(
+                {
+                    "intent": "unknown",
+                    "confidence": 0.2,
+                    "reply": "你这句话我还没完全听懂。",
+                }
+            )
+            agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"), llm_client=llm)
+
+            response = agent.handle_message("chat-1", "嗯就那个", "user-1")
+
+            self.assertIn("还没理解清楚", response.text)
+            self.assertIn("你这句话我还没完全听懂", response.text)
+            self.assertIn("发送“帮助”查看可用场景", response.text)
 
     def test_llm_fallback_dispatches_market_search(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1542,6 +1772,85 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("不允许通过飞书修改", response.text)
             raw = json.loads(config_path.read_text(encoding="utf-8"))
             self.assertEqual(raw["credentials"]["client_secret"], "client-secret")
+
+    def test_packaging_config_update_writes_separate_packaging_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = self._write_minimal_config(base)
+            config_dir = base / "config"
+            packaging_path = config_dir / "packaging.json"
+            packaging_path.write_text(
+                json.dumps(
+                    {"packaging": {"script": "D:/old/package.js", "project_dir": "D:/proj"}},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            agent = ReviewAgent(
+                JsonStateStore(base / "state.json"),
+                oppo_config_path=config_path,
+                packaging_config_path=packaging_path,
+            )
+
+            stage = agent.handle_message("chat-1", "设置提交配置：packaging.script=D:\\AutoReview\\package.js")
+            confirm = agent.handle_message("chat-1", "确认保存配置")
+            packaging = json.loads(packaging_path.read_text(encoding="utf-8"))
+
+            self.assertIn("packaging.script", stage.text)
+            self.assertEqual(packaging["packaging"]["script"], "D:\\AutoReview\\package.js")
+            self.assertIn("配置已保存", confirm.text)
+
+    def test_natural_language_packaging_script_update_is_mapped_to_packaging_script(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = self._write_minimal_config(base)
+            config_dir = base / "config"
+            packaging_path = config_dir / "packaging.json"
+            packaging_path.write_text(
+                json.dumps(
+                    {"packaging": {"script": "D:/old/package.js", "project_dir": "D:/proj"}},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            agent = ReviewAgent(
+                JsonStateStore(base / "state.json"),
+                oppo_config_path=config_path,
+                packaging_config_path=packaging_path,
+            )
+
+            stage = agent.handle_message("chat-1", "路径改成D:\\AutoReview\\package.js，帮我把默认配置改一下。")
+
+            self.assertIn("packaging.script", stage.text)
+            session = agent.state_store.get_session("chat-1")
+            self.assertEqual(session["pending_config_patch"]["packaging.script"], "D:\\AutoReview\\package.js")
+
+            followup = agent.handle_message("chat-1", "我需要在那个文件里面修改？")
+            self.assertIn("packaging.json", followup.text)
+            self.assertIn("packaging.script", followup.text)
+
+    def test_view_submission_config_includes_packaging_summary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = self._write_minimal_config(base)
+            packaging_path = base / "config" / "packaging.json"
+            packaging_path.write_text(
+                json.dumps(
+                    {"packaging": {"script": "D:\\AutoReview\\package.js", "project_dir": "D:\\Proj"}},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            agent = ReviewAgent(
+                JsonStateStore(base / "state.json"),
+                oppo_config_path=config_path,
+                packaging_config_path=packaging_path,
+            )
+
+            response = agent.handle_message("chat-1", "查看提交配置")
+
+            self.assertIn("当前打包配置（packaging.json）", response.text)
+            self.assertIn("打包脚本：D:\\AutoReview\\package.js", response.text)
 
     def test_batch_config_update_supports_pic_paths(self):
         with tempfile.TemporaryDirectory() as temp_dir:

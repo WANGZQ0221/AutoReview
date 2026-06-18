@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import tempfile
+import time
 import unittest
 
 from autoreview.agent.state import JsonStateStore
@@ -47,6 +48,28 @@ class JsonStateStoreTest(unittest.TestCase):
             self.assertEqual(len(history), 20)
             self.assertEqual(history[0]["user"], "消息5")
             self.assertEqual(history[-1]["user"], "消息24")
+
+    def test_trace_events_are_stored_as_daily_jsonl(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = JsonStateStore(Path(temp_dir) / "state.json")
+
+            store.append_trace_event(
+                "chat-1",
+                {
+                    "trace_id": "trace-1",
+                    "user_message": "查包",
+                    "events": [{"type": "tool_execute_request"}],
+                },
+            )
+
+            today = time.strftime("%Y-%m-%d")
+            trace_path = Path(temp_dir) / "sessions" / "chat-1" / f"trace-{today}.jsonl"
+            lines = trace_path.read_text(encoding="utf-8").splitlines()
+            payload = json.loads(lines[0])
+
+            self.assertTrue(trace_path.exists())
+            self.assertEqual(payload["trace_id"], "trace-1")
+            self.assertEqual(payload["user_message"], "查包")
 
 
 if __name__ == "__main__":

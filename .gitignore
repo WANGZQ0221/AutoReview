@@ -5,6 +5,7 @@ __pycache__/
 logs/
 outputs/
 release/
+docs/
 tmp/
 *.pth
 *.pt

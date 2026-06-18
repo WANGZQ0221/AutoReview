@@ -177,8 +177,11 @@ def parse_package_request(text: str) -> JsonDict:
 
 
 def format_package_result(result: JsonDict, *, dry_run: bool = False) -> str:
-    lines = ["打包预演：" if dry_run else "打包完成："]
+    title = "打包预演" if dry_run else "打包完成"
+    lines = [title]
     resolved = result.get("resolved_package") or {}
+    lines.append("")
+    lines.append("应用信息：")
     if resolved:
         lines.append(f"- 应用：{resolved.get('app_name') or '未知'}")
         lines.append(f"- 包名：{resolved.get('pkg_name') or '未知'}")
@@ -186,6 +189,9 @@ def format_package_result(result: JsonDict, *, dry_run: bool = False) -> str:
         lines.append(f"- 版本：{resolved.get('version_code') or '未知'} / {resolved.get('version_name') or '未知'}")
     else:
         lines.append("- 渠道：" + "、".join(str(item) for item in result.get("channels") or []))
+
+    lines.append("")
+    lines.append("打包信息：")
     lines.append(f"- 项目：{result.get('project_dir')}")
     if result.get("packconfig"):
         lines.append(f"- packconfig：{result['packconfig']}")
@@ -193,22 +199,33 @@ def format_package_result(result: JsonDict, *, dry_run: bool = False) -> str:
         lines.append(f"- 备份：{result['backup_path']}")
     latest = result.get("latest_apks") or []
     if latest and not dry_run:
+        lines.append("")
+        lines.append("输出文件：")
         lines.append("- 最新 APK：" + str(latest[0]))
+    if dry_run:
+        lines.append("")
+        lines.append("说明：这是预演，没有真正打包。")
     return "\n".join(lines)
 
 
 def format_batch_package_result(results: list[JsonDict], *, dry_run: bool = False) -> str:
     success = [item for item in results if item.get("ok", True)]
     failed = [item for item in results if not item.get("ok", True)]
-    lines = ["批量打包预演：" if dry_run else "批量打包完成："]
+    title = "批量打包预演" if dry_run else "批量打包完成"
+    lines = [title, "", "汇总："]
     lines.append(f"- 成功：{len(success)}")
     lines.append(f"- 失败：{len(failed)}")
+    lines.append("")
+    lines.append("任务结果：")
     for item in results[:8]:
         if item.get("ok", True):
             channels = "、".join(str(value) for value in item.get("channels") or [])
-            lines.append(f"- {item.get('name')}: {channels}")
+            lines.append(f"- {item.get('name')}：{channels}")
         else:
-            lines.append(f"- {item.get('name')}: 失败，{item.get('error')}")
+            lines.append(f"- {item.get('name')}：失败，{item.get('error')}")
+    if dry_run:
+        lines.append("")
+        lines.append("说明：这是预演，没有真正打包。")
     return "\n".join(lines)
 
 

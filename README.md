@@ -672,6 +672,7 @@ cd D:\development_sercer\AutoReview
 
 - 结构化会话状态保存在 `data/review_agent_state.json`。
 - 逐轮对话流水按会话拆分保存在 `data/sessions/<session_id>/turns.jsonl`。
+- 全链路调试日志保存在 `data/sessions/<session_id>/trace.jsonl`，包含用户消息、大模型理解、工具调用、工具结果、二次总结输入和最终回复。日志会脱敏常见密钥字段，但仍不建议外发。
 
 飞书配置在 `config/oppo_submission.json`：
 
@@ -713,6 +714,7 @@ cd D:\development_sercer\AutoReview
 - 飞书下载图片/文件需要开放消息资源、图片资源、文件资源读取权限。
 - 结构化会话状态保存在 `data/review_agent_state.json`。
 - 逐轮对话流水保存在 `data/sessions/<session_id>/turns.jsonl`，用于上下文追问和最近对话回放。
+- 全链路 trace 保存在 `data/sessions/<session_id>/trace.jsonl`，用于排查 LLM 理解、工具调用和最终回复问题。
 - 上传到飞书的原始文件会保存到 `data/feishu_uploads/`。
 - `记录竞品下载` 会在会话状态的 `market_download_snapshots` 中按 `YYYY-MM` 保存月度快照。多数商店不公开精确下载量，且公开搜索页结构可能变化；AutoReview 会尽力解析公开可见的下载量文本、评分和评分数，不公开或解析不到的字段会留空。OPPO / vivo 等公开搜索入口不可用时会自动跳过，不再把 404 暴露给飞书用户。
 - 竞品搜索回复会包含“已查询”概况，说明每个商店是返回了多少结果、未解析到匹配结果、公开入口不可用跳过，还是查询超时/失败。
