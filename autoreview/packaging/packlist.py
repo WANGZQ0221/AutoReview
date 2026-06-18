@@ -42,6 +42,17 @@ def resolve_packlist_package(project_dir: str | Path, pkg_name: str) -> list[Pac
     return [entry for entry in scan_packlist(project_dir) if entry.pkg_name == wanted]
 
 
+def resolve_packlist_app_name(project_dir: str | Path, app_name: str) -> list[PacklistEntry]:
+    wanted = _normalize_text(app_name)
+    if not wanted:
+        raise PackageError("app_name must not be empty")
+    entries = scan_packlist(project_dir)
+    exact = [entry for entry in entries if _normalize_text(entry.app_name) == wanted]
+    if exact:
+        return exact
+    return [entry for entry in entries if wanted in _normalize_text(entry.app_name)]
+
+
 def require_single_package_channel(project_dir: str | Path, pkg_name: str) -> PacklistEntry:
     matches = resolve_packlist_package(project_dir, pkg_name)
     if not matches:
@@ -151,3 +162,7 @@ def _cell(cells: list[Any], index: int) -> str:
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value).strip()
+
+
+def _normalize_text(value: str) -> str:
+    return "".join(str(value or "").strip().lower().split())

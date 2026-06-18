@@ -14,6 +14,13 @@ import time
 from typing import Any, Callable
 
 from autoreview.market import AppMarketSearchResult, AppMarketSearcher, build_monthly_snapshot
+from autoreview.packaging.agent import (
+    PackagingAgent,
+    format_batch_package_result,
+    format_package_result,
+    parse_package_request,
+)
+from autoreview.packaging.packlist import resolve_packlist_app_name
 from autoreview.oppo.agent import OppoSubmissionAgent, extract_rejection_reason
 from autoreview.oppo.config import OppoSubmissionConfig
 from autoreview.oppo.errors import OppoError
@@ -29,6 +36,7 @@ from .config_editor import (
 )
 from .materials import MaterialBindError, bind_uploaded_material
 from .state import JsonStateStore
+from .tools import ToolCall, ToolRegistry
 
 
 JsonDict = dict[str, Any]
@@ -48,7 +56,9 @@ HELP_TEXT = """我可以协助 OPPO 审核提交流程：
 12. 发送文件或图片后，发送“绑定材料：APK/图标/截图1/版权证明/ICP证明”。
 13. 发送“搜索竞品：关键词”搜索应用商店里的同类 APP。
 14. 发送“记录竞品下载：关键词”搜索竞品并按当前月份写入会话状态。
-15. 发送“清空当前记录”清空当前飞书会话状态；发送“清空所有记录”清空全部会话状态。"""
+15. 发送“八年级语文下册对应什么包”查询 packlist 里的包名/渠道/版本。
+16. 发送“打包 八年级语文下册 dry-run”或“打包 八年级语文下册”触发打包。
+17. 发送“清空当前记录”清空当前飞书会话状态；发送“清空所有记录”清空全部会话状态。"""
 
 
 @dataclass
@@ -74,6 +84,8 @@ class ReviewAgent:
         self.oppo_agent_factory = oppo_agent_factory
         self.market_searcher_factory = market_searcher_factory
         self.llm_client = llm_client
+        self.packaging_agent = PackagingAgent(self.oppo_config_path) if self.oppo_config_path else PackagingAgent(None)
+        self.tool_registry = self._build_tool_registry()
 
     def handle_message(self, session_id: str, text: str, sender_id: str | None = None) -> AgentResponse:
         clean_text = self._normalize_incoming_text(text)
@@ -88,6 +100,10 @@ class ReviewAgent:
         return response
 
     def _handle_message_logic(self, session_id: str, clean_text: str, sender_id: str | None = None) -> AgentResponse:
+        tool_response = self._response_from_llm_tool_call(session_id, clean_text, sender_id=sender_id)
+        if tool_response:
+            return tool_response
+
         llm_decision = self._interpret_with_llm(session_id, clean_text, sender_id=sender_id)
         if self._should_apply_llm_before_rules(clean_text):
             llm_response = self._response_from_llm_decision(
@@ -173,14 +189,26 @@ class ReviewAgent:
             research_response = self._handle_app_store_data_platform_research(clean_text, query)
             if research_response:
                 return research_response
-            return self.search_competitors(session_id, query, sender_id=sender_id)
+            return self.search_competitors(
+                session_id,
+                query,
+                sender_id=sender_id,
+                source_text=clean_text,
+                target_stores=_extract_target_market_stores(clean_text),
+            )
 
         generic_search_query = self._extract_generic_app_search_query(clean_text)
         if generic_search_query:
             research_response = self._handle_app_store_data_platform_research(clean_text, generic_search_query)
             if research_response:
                 return research_response
-            return self.search_competitors(session_id, generic_search_query, sender_id=sender_id)
+            return self.search_competitors(
+                session_id,
+                generic_search_query,
+                sender_id=sender_id,
+                source_text=clean_text,
+                target_stores=_extract_target_market_stores(clean_text),
+            )
 
         if clean_text.startswith(("记录竞品下载", "记录竞品月报", "月度记录竞品")):
             query = self._extract_market_query(clean_text, session_id)
@@ -189,7 +217,13 @@ class ReviewAgent:
                     "请按“记录竞品下载：关键词”发送，例如“记录竞品下载：英语四级单词”。",
                     {"intent": "market_download_snapshot", "missing": "query"},
                 )
-            return self.record_competitor_downloads(session_id, query, sender_id=sender_id)
+            return self.record_competitor_downloads(
+                session_id,
+                query,
+                sender_id=sender_id,
+                source_text=clean_text,
+                target_stores=_extract_target_market_stores(clean_text),
+            )
 
         if clean_text.startswith("记录应用"):
             app_info = self._parse_app_info(self._extract_payload(clean_text))
@@ -230,6 +264,10 @@ class ReviewAgent:
         if semantic_response:
             return semantic_response
 
+        fallback_package_response = self._handle_packaging_fallback(session_id, clean_text)
+        if fallback_package_response:
+            return fallback_package_response
+
         llm_response = self._response_from_llm_decision(
             session_id,
             clean_text,
@@ -250,6 +288,12 @@ class ReviewAgent:
         session_id: str,
         query: str,
         sender_id: str | None = None,
+        *,
+        source_text: str = "",
+        exact_match: bool = False,
+        exclude_terms: list[str] | None = None,
+        include_terms: list[str] | None = None,
+        target_stores: list[str] | None = None,
     ) -> AgentResponse:
         query = _clean_market_query(query)
         if _is_contextual_app_reference(query):
@@ -259,17 +303,28 @@ class ReviewAgent:
                 "请提供有效的应用名或关键词，例如“搜索竞品：英语四级单词”。",
                 {"intent": "market_search", "missing": "query"},
             )
-        result = self._normalize_market_result(self._search_markets(session_id, query, limit=8))
+        result = self._normalize_market_result(
+            self._search_markets(session_id, query, limit=8, target_stores=set(target_stores or []))
+        )
+        result, filtered_names = self._filter_market_result(
+            result,
+            query=query,
+            source_text=source_text,
+            exact_match=exact_match,
+            exclude_terms=exclude_terms,
+            include_terms=include_terms,
+        )
         self.state_store.update_session(
             session_id,
             {
                 "last_market_search": result.to_dict(),
+                "last_market_filtered_names": filtered_names,
                 "sender_id": sender_id,
             },
         )
         return AgentResponse(
-            self._format_market_search(result),
-            {"intent": "market_search", "result": result.to_dict()},
+            self._format_market_search(result, filtered_names=filtered_names),
+            {"intent": "market_search", "result": result.to_dict(), "filtered_names": filtered_names},
         )
 
     def record_competitor_downloads(
@@ -277,6 +332,12 @@ class ReviewAgent:
         session_id: str,
         query: str,
         sender_id: str | None = None,
+        *,
+        source_text: str = "",
+        exact_match: bool = False,
+        exclude_terms: list[str] | None = None,
+        include_terms: list[str] | None = None,
+        target_stores: list[str] | None = None,
     ) -> AgentResponse:
         query = _clean_market_query(query)
         if _is_contextual_app_reference(query):
@@ -286,7 +347,17 @@ class ReviewAgent:
                 "请提供有效的应用名或关键词，例如“记录竞品下载：英语四级单词”。",
                 {"intent": "market_download_snapshot", "missing": "query"},
             )
-        result = self._normalize_market_result(self._search_markets(session_id, query, limit=8))
+        result = self._normalize_market_result(
+            self._search_markets(session_id, query, limit=8, target_stores=set(target_stores or []))
+        )
+        result, filtered_names = self._filter_market_result(
+            result,
+            query=query,
+            source_text=source_text,
+            exact_match=exact_match,
+            exclude_terms=exclude_terms,
+            include_terms=include_terms,
+        )
         snapshot = build_monthly_snapshot(query, result)
         session = self.state_store.get_session(session_id)
         snapshots = dict(session.get("market_download_snapshots") or {})
@@ -295,13 +366,14 @@ class ReviewAgent:
             session_id,
             {
                 "last_market_search": result.to_dict(),
+                "last_market_filtered_names": filtered_names,
                 "market_download_snapshots": snapshots,
                 "sender_id": sender_id,
             },
         )
         return AgentResponse(
-            self._format_download_snapshot(snapshot),
-            {"intent": "market_download_snapshot", "snapshot": snapshot},
+            self._format_download_snapshot(snapshot, filtered_names=filtered_names),
+            {"intent": "market_download_snapshot", "snapshot": snapshot, "filtered_names": filtered_names},
         )
 
     def clear_session_state(self, session_id: str) -> AgentResponse:
@@ -584,8 +656,20 @@ class ReviewAgent:
                     {"intent": intent, "missing": "query", "semantic": True},
                 )
             if intent == "market_download_snapshot":
-                return self.record_competitor_downloads(session_id, query, sender_id=sender_id)
-            return self.search_competitors(session_id, query, sender_id=sender_id)
+                return self.record_competitor_downloads(
+                    session_id,
+                    query,
+                    sender_id=sender_id,
+                    source_text=text,
+                    target_stores=_extract_target_market_stores(text),
+                )
+            return self.search_competitors(
+                session_id,
+                query,
+                sender_id=sender_id,
+                source_text=text,
+                target_stores=_extract_target_market_stores(text),
+            )
 
         if self._looks_like_last_image_analysis_request(lowered):
             session = self.state_store.get_session(session_id)
@@ -654,6 +738,10 @@ class ReviewAgent:
         if self._looks_like_session_status_request(lowered):
             session = self.state_store.get_session(session_id)
             return AgentResponse(self._format_session(session), {"intent": "status", "session": session, "semantic": True})
+
+        fallback_package_response = self._handle_packaging_fallback(session_id, text)
+        if fallback_package_response:
+            return fallback_package_response
 
         return None
 
@@ -870,6 +958,12 @@ class ReviewAgent:
         if intent == "submit_checklist":
             session = self.state_store.get_session(session_id)
             return AgentResponse(self._build_submit_checklist(session), {"intent": "submit_checklist", "session": session})
+        if intent in {"package_apk", "batch_package"}:
+            package_response = self._run_packaging_intent(session_id, text, decision)
+            if package_response:
+                return package_response
+        if intent == "package_lookup":
+            return self._run_packaging_lookup(session_id, text, decision)
         if intent == "view_submission_config":
             return self.view_submission_config()
         if intent == "stage_config_update":
@@ -912,8 +1006,26 @@ class ReviewAgent:
             if research_response:
                 return research_response
             if intent == "market_download_snapshot":
-                return self.record_competitor_downloads(session_id, query, sender_id=sender_id)
-            return self.search_competitors(session_id, query, sender_id=sender_id)
+                return self.record_competitor_downloads(
+                    session_id,
+                    query,
+                    sender_id=sender_id,
+                    source_text=text,
+                    exact_match=bool(decision.get("exact_match")),
+                    exclude_terms=_normalize_string_list(decision.get("exclude_terms") or []),
+                    include_terms=_normalize_string_list(decision.get("include_terms") or []),
+                    target_stores=_normalize_store_list(decision.get("target_stores") or _extract_target_market_stores(text)),
+                )
+            return self.search_competitors(
+                session_id,
+                query,
+                sender_id=sender_id,
+                source_text=text,
+                exact_match=bool(decision.get("exact_match")),
+                exclude_terms=_normalize_string_list(decision.get("exclude_terms") or []),
+                include_terms=_normalize_string_list(decision.get("include_terms") or []),
+                target_stores=_normalize_store_list(decision.get("target_stores") or _extract_target_market_stores(text)),
+            )
         return None
 
     def _store_llm_memories(
@@ -1088,16 +1200,423 @@ class ReviewAgent:
             return self.market_searcher_factory()
         return AppMarketSearcher(market_data_config=self._market_data_config())
 
-    def _search_markets(self, session_id: str, query: str, *, limit: int) -> Any:
-        stores = self._allowed_market_stores(session_id)
+    def _build_tool_registry(self) -> ToolRegistry:
+        registry = ToolRegistry()
+        registry.register(
+            "help",
+            "查看 AutoReview 飞书 agent 支持的能力和常用指令。",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            lambda call, context: AgentResponse(HELP_TEXT, {"intent": "help"}),
+        )
+        registry.register(
+            "session_status",
+            "查看当前会话记录、最近图片/OCR、竞品搜索、打包查询、整改待办等状态。",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_session_status,
+        )
+        registry.register(
+            "oppo_status",
+            "查询 OPPO 当前审核状态；可选 version_code。",
+            {
+                "type": "object",
+                "properties": {"version_code": {"type": "string"}},
+                "additionalProperties": True,
+            },
+            self._tool_oppo_status,
+        )
+        registry.register(
+            "submission_check",
+            "执行提交前检查，检查配置、缺文件和最近驳回重提风险。",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_submission_check,
+        )
+        registry.register(
+            "view_submission_config",
+            "查看当前 OPPO 提交配置的非密钥字段摘要。",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_view_submission_config,
+        )
+        registry.register(
+            "stage_config_update",
+            "暂存提交配置修改，不直接写入文件；支持 config_assignment 或 json_patch。",
+            {
+                "type": "object",
+                "properties": {
+                    "config_assignment": {"type": "string"},
+                    "json_patch": {"type": "object"},
+                },
+                "additionalProperties": True,
+            },
+            self._tool_stage_config_update,
+        )
+        registry.register(
+            "confirm_config_update",
+            "确认并写入当前会话暂存的配置修改。",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_confirm_config_update,
+        )
+        registry.register(
+            "cancel_config_update",
+            "取消当前会话暂存的配置修改。",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_cancel_config_update,
+        )
+        registry.register(
+            "bind_material",
+            "把最近一次飞书上传的文件或图片绑定为 APK、图标、截图、版权证明或 ICP 证明。",
+            {
+                "type": "object",
+                "properties": {"material_label": {"type": "string"}},
+                "additionalProperties": True,
+            },
+            self._tool_bind_material,
+        )
+        registry.register(
+            "analyze_rejection",
+            "分析用户提供的应用商店审核驳回原因文本。",
+            {
+                "type": "object",
+                "properties": {"reason": {"type": "string"}},
+                "additionalProperties": True,
+            },
+            self._tool_analyze_rejection,
+        )
+        registry.register(
+            "analyze_last_image",
+            "用当前会话最近一次图片 OCR 文本分析审核驳回原因。",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_analyze_last_image,
+        )
+        registry.register(
+            "remediation_checklist",
+            "基于最近一次驳回分析生成整改待办清单。",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_remediation_checklist,
+        )
+        registry.register(
+            "package_lookup",
+            "按中文应用名查询 packlist 里的包名、渠道、版本号和版本名。",
+            {
+                "type": "object",
+                "properties": {
+                    "app_name": {"type": "string"},
+                    "query": {"type": "string"},
+                },
+                "additionalProperties": True,
+            },
+            self._tool_package_lookup,
+        )
+        registry.register(
+            "package_apk",
+            "打包单个 APK。支持 app_name、pkg_name、channels、dry_run。",
+            {
+                "type": "object",
+                "properties": {
+                    "app_name": {"type": "string"},
+                    "pkg_name": {"type": "string"},
+                    "channels": {"type": "array", "items": {"type": "string"}},
+                    "dry_run": {"type": "boolean"},
+                },
+                "additionalProperties": True,
+            },
+            self._tool_package_apk,
+        )
+        registry.register(
+            "batch_package",
+            "按配置文件批量打包 APK。支持 dry_run。",
+            {
+                "type": "object",
+                "properties": {"dry_run": {"type": "boolean"}},
+                "additionalProperties": True,
+            },
+            self._tool_batch_package,
+        )
+        registry.register(
+            "market_search",
+            "搜索应用商店竞品或指定 APP 的公开指标。支持精确匹配、排除词和指定商店。",
+            {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "exact_match": {"type": "boolean"},
+                    "exclude_terms": {"type": "array", "items": {"type": "string"}},
+                    "include_terms": {"type": "array", "items": {"type": "string"}},
+                    "target_stores": {"type": "array", "items": {"type": "string"}},
+                },
+                "additionalProperties": True,
+            },
+            self._tool_market_search,
+        )
+        registry.register(
+            "market_download_snapshot",
+            "搜索竞品并把当前月份的公开下载/评分指标写入会话状态。",
+            {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "exact_match": {"type": "boolean"},
+                    "exclude_terms": {"type": "array", "items": {"type": "string"}},
+                    "include_terms": {"type": "array", "items": {"type": "string"}},
+                    "target_stores": {"type": "array", "items": {"type": "string"}},
+                },
+                "additionalProperties": True,
+            },
+            self._tool_market_download_snapshot,
+        )
+        return registry
+
+    def _response_from_llm_tool_call(
+        self,
+        session_id: str,
+        text: str,
+        sender_id: str | None = None,
+    ) -> AgentResponse | None:
+        if not self.llm_client or not hasattr(self.llm_client, "choose_tool"):
+            return None
+        try:
+            raw_call = self.llm_client.choose_tool(text, self._llm_context(session_id), self.tool_registry.schemas())
+        except Exception:
+            return None
+        if not isinstance(raw_call, dict):
+            return None
+        self._store_llm_memories(session_id, raw_call, sender_id=sender_id)
+        try:
+            tool_call = ToolCall.from_mapping(raw_call)
+        except ValueError:
+            return None
+        if tool_call.is_noop:
+            return None
+        if tool_call.confidence is not None and tool_call.confidence < 0.45:
+            return None
+        if not self.tool_registry.has(tool_call.name):
+            return None
+
+        context = {"session_id": session_id, "text": text, "sender_id": sender_id}
+        try:
+            response = self.tool_registry.execute(tool_call, context)
+        except Exception as exc:
+            response = AgentResponse(
+                f"工具执行失败：{exc}",
+                {"intent": tool_call.name, "error": str(exc)},
+            )
+        if not isinstance(response, AgentResponse):
+            response = AgentResponse(str(response or ""), {"intent": tool_call.name})
+
+        tool_result = {
+            "ok": "error" not in response.data,
+            "text": response.text,
+            "data": _json_safe(response.data),
+        }
+        summary = self._summarize_tool_response(session_id, text, tool_call, tool_result)
+        data = dict(response.data)
+        data["tool_call"] = tool_call.to_dict()
+        data["tool_result"] = tool_result
+        return AgentResponse(summary or response.text, data)
+
+    def _summarize_tool_response(
+        self,
+        session_id: str,
+        text: str,
+        tool_call: ToolCall,
+        tool_result: JsonDict,
+    ) -> str:
+        if not self.llm_client or not hasattr(self.llm_client, "summarize_tool_result"):
+            return ""
+        try:
+            return str(
+                self.llm_client.summarize_tool_result(
+                    text,
+                    self._llm_context(session_id),
+                    tool_call.to_dict(),
+                    tool_result,
+                )
+                or ""
+            ).strip()
+        except Exception:
+            return ""
+
+    def _tool_session_status(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        session_id = str(context.get("session_id") or "")
+        session = self.state_store.get_session(session_id)
+        return AgentResponse(self._format_session(session), {"intent": "status", "session": session})
+
+    def _tool_oppo_status(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        version_code = str(call.arguments.get("version_code") or "").strip()
+        text = f"查询审核状态：{version_code}" if version_code else str(context.get("text") or "查询审核状态")
+        return self.query_oppo_status(
+            text,
+            session_id=str(context.get("session_id") or ""),
+            sender_id=context.get("sender_id"),
+        )
+
+    def _tool_submission_check(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        return self.check_submission(str(context.get("session_id") or ""))
+
+    def _tool_view_submission_config(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        return self.view_submission_config()
+
+    def _tool_stage_config_update(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        session_id = str(context.get("session_id") or "")
+        sender_id = context.get("sender_id")
+        assignment = str(call.arguments.get("config_assignment") or "").strip()
+        json_patch = call.arguments.get("json_patch")
+        if isinstance(json_patch, dict) and json_patch:
+            return self.stage_config_json(
+                session_id,
+                json.dumps(json_patch, ensure_ascii=False),
+                sender_id=sender_id,
+            )
+        if not assignment:
+            assignment = self._extract_assignment_payload(str(context.get("text") or "")).strip()
+        if not assignment:
+            return AgentResponse(
+                "要改哪个配置？请给我类似 submission.version_code=10002 的字段和值。",
+                {"intent": "stage_config_update", "missing": "assignment"},
+            )
+        if assignment.lstrip().startswith("{"):
+            return self.stage_config_json(session_id, assignment, sender_id=sender_id)
+        return self.stage_config_assignment(session_id, assignment, sender_id=sender_id)
+
+    def _tool_confirm_config_update(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        return self.confirm_config_update(
+            str(context.get("session_id") or ""),
+            sender_id=context.get("sender_id"),
+        )
+
+    def _tool_cancel_config_update(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        return self.cancel_config_update(
+            str(context.get("session_id") or ""),
+            sender_id=context.get("sender_id"),
+        )
+
+    def _tool_bind_material(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        label = str(call.arguments.get("material_label") or "").strip()
+        if not label:
+            label = self._extract_material_label(str(context.get("text") or "")).strip()
+        return self.bind_last_upload_as_material(
+            str(context.get("session_id") or ""),
+            label,
+            sender_id=context.get("sender_id"),
+        )
+
+    def _tool_analyze_rejection(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        reason = str(call.arguments.get("reason") or "").strip()
+        if not reason:
+            reason = self._extract_payload(str(context.get("text") or "")).strip()
+        if not reason:
+            return AgentResponse("请把审核驳回原因发给我，我再分析。", {"intent": "analyze_rejection", "missing": "reason"})
+        return self.analyze_rejection_text(
+            str(context.get("session_id") or ""),
+            reason,
+            sender_id=context.get("sender_id"),
+        )
+
+    def _tool_analyze_last_image(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        session_id = str(context.get("session_id") or "")
+        session = self.state_store.get_session(session_id)
+        image_text = self._get_last_image_text(session)
+        if not image_text:
+            return AgentResponse(
+                "最近图片还没有可用于分析的 OCR 文本。请先发送一张包含驳回原因的截图。",
+                {"intent": "analyze_last_image", "missing": "ocr_text"},
+            )
+        return self.analyze_rejection_text(
+            session_id,
+            image_text,
+            sender_id=context.get("sender_id"),
+            source="image",
+        )
+
+    def _tool_remediation_checklist(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        return self.build_remediation_checklist(
+            str(context.get("session_id") or ""),
+            sender_id=context.get("sender_id"),
+        )
+
+    def _tool_package_lookup(self, call: ToolCall, context: JsonDict) -> AgentResponse | None:
+        decision = {
+            "intent": "package_lookup",
+            "app_name": str(call.arguments.get("app_name") or ""),
+            "query": str(call.arguments.get("query") or ""),
+        }
+        return self._run_packaging_lookup(
+            str(context.get("session_id") or ""),
+            str(context.get("text") or ""),
+            decision,
+        )
+
+    def _tool_package_apk(self, call: ToolCall, context: JsonDict) -> AgentResponse | None:
+        decision = {
+            "intent": "package_apk",
+            "app_name": str(call.arguments.get("app_name") or ""),
+            "pkg_name": str(call.arguments.get("pkg_name") or ""),
+            "channels": _normalize_string_list(call.arguments.get("channels") or []),
+            "dry_run": bool(call.arguments.get("dry_run")),
+        }
+        return self._run_packaging_intent(
+            str(context.get("session_id") or ""),
+            str(context.get("text") or ""),
+            decision,
+        )
+
+    def _tool_batch_package(self, call: ToolCall, context: JsonDict) -> AgentResponse | None:
+        return self._run_packaging_intent(
+            str(context.get("session_id") or ""),
+            str(context.get("text") or ""),
+            {"intent": "batch_package", "dry_run": bool(call.arguments.get("dry_run"))},
+        )
+
+    def _tool_market_search(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        query = str(call.arguments.get("query") or "").strip()
+        return self.search_competitors(
+            str(context.get("session_id") or ""),
+            query,
+            sender_id=context.get("sender_id"),
+            source_text=str(context.get("text") or ""),
+            exact_match=bool(call.arguments.get("exact_match")),
+            exclude_terms=_normalize_string_list(call.arguments.get("exclude_terms") or []),
+            include_terms=_normalize_string_list(call.arguments.get("include_terms") or []),
+            target_stores=_normalize_store_list(call.arguments.get("target_stores") or []),
+        )
+
+    def _tool_market_download_snapshot(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        query = str(call.arguments.get("query") or "").strip()
+        return self.record_competitor_downloads(
+            str(context.get("session_id") or ""),
+            query,
+            sender_id=context.get("sender_id"),
+            source_text=str(context.get("text") or ""),
+            exact_match=bool(call.arguments.get("exact_match")),
+            exclude_terms=_normalize_string_list(call.arguments.get("exclude_terms") or []),
+            include_terms=_normalize_string_list(call.arguments.get("include_terms") or []),
+            target_stores=_normalize_store_list(call.arguments.get("target_stores") or []),
+        )
+
+    def _search_markets(
+        self,
+        session_id: str,
+        query: str,
+        *,
+        limit: int,
+        target_stores: set[str] | None = None,
+    ) -> Any:
+        stores = self._allowed_market_stores(session_id, target_stores=target_stores)
         searcher = self._make_market_searcher()
-        if stores is None:
+        if not stores:
             return searcher.search_competitors(query, limit=limit)
         return searcher.search_competitors(query, limit=limit, stores=stores)
 
-    def _allowed_market_stores(self, session_id: str) -> set[str] | None:
+    def _allowed_market_stores(self, session_id: str, *, target_stores: set[str] | None = None) -> set[str] | None:
         preferences = self._market_store_preferences(session_id)
         disabled = preferences.get("disabled_stores") or []
+        normalized_targets = {
+            _normalize_store_name(store)
+            for store in (target_stores or set())
+            if _normalize_store_name(store)
+        }
+        if normalized_targets:
+            allowed = normalized_targets - set(disabled)
+            return allowed
         if not disabled:
             return None
         allowed = {store for store, _ in SUPPORTED_MARKET_STORES if store not in set(disabled)}
@@ -1700,6 +2219,149 @@ class ReviewAgent:
             lines.append("结论：先补齐缺口或处理风险，再提交。")
         return "\n".join(lines)
 
+    def _handle_packaging_fallback(self, session_id: str, text: str) -> AgentResponse | None:
+        if self._looks_like_packaging_request(text.lower()):
+            parsed = parse_package_request(text)
+            if not parsed["app_name"] and not parsed["pkg_name"] and not parsed["channels"] and not parsed["batch"]:
+                session = self.state_store.get_session(session_id)
+                lookup = session.get("last_package_lookup") or {}
+                matches = lookup.get("matches") or []
+                if self._contains_any(text, ("这个应用", "这个包", "刚才这个", "上面这个")) and len(matches) == 1:
+                    parsed["pkg_name"] = str(matches[0].get("pkg_name") or "")
+                else:
+                    return None
+            intent = "batch_package" if parsed["batch"] else "package_apk"
+            return self._run_packaging_intent(session_id, text, {"intent": intent, **parsed})
+
+        if self._looks_like_packaging_lookup(text):
+            query = self._extract_packaging_lookup_query(text)
+            if not query:
+                return None
+            return self._run_packaging_lookup(session_id, text, {"intent": "package_lookup", "query": query})
+        return None
+
+    def _run_packaging_intent(self, session_id: str, text: str, decision: JsonDict) -> AgentResponse | None:
+        parsed = parse_package_request(text)
+        dry_run = bool(decision.get("dry_run")) or bool(parsed.get("dry_run"))
+        try:
+            if decision.get("intent") == "batch_package" or parsed.get("batch"):
+                result = self.packaging_agent.package_batch(dry_run=dry_run, continue_on_error=True)
+                return AgentResponse(
+                    format_batch_package_result(result, dry_run=dry_run),
+                    {"intent": "batch_package", "result": result, "dry_run": dry_run},
+                )
+            result = self.packaging_agent.package_one(
+                app_name=str(decision.get("app_name") or parsed.get("app_name") or ""),
+                pkg_name=str(decision.get("pkg_name") or parsed.get("pkg_name") or ""),
+                channels=_normalize_string_list(decision.get("channels") or parsed.get("channels") or []),
+                dry_run=dry_run,
+            )
+            return AgentResponse(
+                format_package_result(result, dry_run=dry_run),
+                {"intent": "package_apk", "result": result, "dry_run": dry_run},
+            )
+        except Exception as exc:
+            return AgentResponse(
+                f"打包失败：{exc}",
+                {"intent": "package_apk" if not parsed.get("batch") else "batch_package", "error": str(exc)},
+            )
+
+    def _looks_like_packaging_request(self, text: str) -> bool:
+        return self._contains_any(
+            text,
+            ("打包", "构建", "编译apk", "编译 apk", "package-apk", "batch-package", "package apk"),
+        )
+
+    def _looks_like_packaging_lookup(self, text: str) -> bool:
+        return self._contains_any(text, ("查包", "查渠道", "对应什么包", "是什么包", "是什么渠道", "包名", "渠道名"))
+
+    def _run_packaging_lookup(self, session_id: str, text: str, decision: JsonDict) -> AgentResponse | None:
+        query = str(decision.get("app_name") or decision.get("query") or self._extract_packaging_lookup_query(text)).strip()
+        if not query:
+            return AgentResponse(
+                "请告诉我应用名，比如“八年级语文下册”或“帮我查四年级英语上册对应什么包”。",
+                {"intent": "package_lookup", "missing": "query"},
+            )
+        try:
+            matches = resolve_packlist_app_name(self._packaging_project_dir(), query)
+        except Exception as exc:
+            return AgentResponse(f"查包失败：{exc}", {"intent": "package_lookup", "error": str(exc)})
+        if not matches:
+            return AgentResponse(
+                f"没找到和“{query}”对应的包。",
+                {"intent": "package_lookup", "query": query, "matches": []},
+            )
+        lines = [f"查到 {query} 对应的包："]
+        for entry in matches[:8]:
+            lines.append(
+                f"- {entry.app_name} / {entry.pkg_name} / {entry.channel} / "
+                f"{entry.version_code} / {entry.version_name}"
+            )
+        if len(matches) == 1:
+            lines.append("如果要直接打包，可以说“打包这个应用”或“打包这个包”。")
+        data = {"intent": "package_lookup", "query": query, "matches": [entry.to_dict() for entry in matches]}
+        self.state_store.update_session(
+            session_id,
+            {"last_package_lookup": {"query": query, "matches": data["matches"]}},
+        )
+        return AgentResponse("\n".join(lines), data)
+
+    def _extract_packaging_lookup_query(self, text: str) -> str:
+        payload = self._extract_payload(text)
+        if payload:
+            return payload
+        clean = re.sub(r"^(帮我|请|麻烦|能不能|可以|我要|我想|帮我查|帮我找)\s*", "", text)
+        clean = re.sub(r"(对应什么包|是什么包|是什么渠道|查包|查渠道|这个包|这个应用|包名|渠道名)", "", clean)
+        clean = re.sub(r"[：:，,。！？?\s]+", " ", clean).strip()
+        return clean
+
+    def _packaging_project_dir(self) -> Path:
+        if self.packaging_agent.settings.project_dir:
+            return self.packaging_agent.settings.project_dir
+        raise OppoError("还没有配置 packaging.project_dir，暂时不能查包。")
+
+    def _filter_market_result(
+        self,
+        result: AppMarketSearchResult,
+        *,
+        query: str,
+        source_text: str = "",
+        exact_match: bool = False,
+        exclude_terms: list[str] | None = None,
+        include_terms: list[str] | None = None,
+    ) -> tuple[AppMarketSearchResult, JsonDict]:
+        resolved_exact = exact_match or _looks_like_exact_app_request(source_text)
+        excludes = _unique_texts((exclude_terms or []) + _infer_market_exclude_terms(source_text))
+        includes = _unique_texts(include_terms or [])
+        query_name = _normalize_market_app_name(query)
+        filtered_apps: list[AppMarketListing] = []
+        dropped: list[str] = []
+        for app in result.apps:
+            normalized_name = _normalize_market_app_name(app.name)
+            if resolved_exact and query_name and normalized_name != query_name:
+                dropped.append(app.name)
+                continue
+            if includes and not any(term in normalized_name for term in includes):
+                dropped.append(app.name)
+                continue
+            if excludes and any(term in normalized_name for term in excludes):
+                dropped.append(app.name)
+                continue
+            filtered_apps.append(app)
+        filtered = AppMarketSearchResult(
+            query=result.query,
+            apps=filtered_apps,
+            errors=result.errors,
+            store_statuses=result.store_statuses,
+        )
+        filter_info = {
+            "exact_match": resolved_exact,
+            "exclude_terms": excludes,
+            "include_terms": includes,
+            "dropped_names": _unique_texts(dropped),
+        }
+        return filtered, filter_info
+
     @staticmethod
     def _build_remediation_items(analysis: JsonDict) -> list[str]:
         if not analysis:
@@ -1763,10 +2425,17 @@ class ReviewAgent:
         return AppMarketSearchResult(query="", apps=[], errors=["unsupported market search result"])
 
     @staticmethod
-    def _format_market_search(result: AppMarketSearchResult) -> str:
+    def _format_market_search(result: AppMarketSearchResult, *, filtered_names: JsonDict | None = None) -> str:
         lines = [f"应用商店竞品搜索：{result.query}"]
+        filtered_names = filtered_names or {}
         if not result.apps:
-            lines.append("- 未找到结果。可以换更具体的关键词或应用名。")
+            if filtered_names.get("exact_match"):
+                lines.append(f"- 未找到与“{result.query}”精确匹配的结果。")
+            else:
+                lines.append("- 未找到结果。可以换更具体的关键词或应用名。")
+            dropped = filtered_names.get("dropped_names") or []
+            if dropped:
+                lines.append("- 已排除：" + "、".join(str(item) for item in dropped[:6]))
         for app in result.apps[:8]:
             metrics = _format_market_metrics(app.to_dict())
             developer = f" / {app.developer}" if app.developer else ""
@@ -1781,11 +2450,18 @@ class ReviewAgent:
         return "\n".join(lines)
 
     @staticmethod
-    def _format_download_snapshot(snapshot: JsonDict) -> str:
+    def _format_download_snapshot(snapshot: JsonDict, *, filtered_names: JsonDict | None = None) -> str:
         lines = [f"已记录 {snapshot['month']} 竞品下载数据：{snapshot.get('query') or ''}"]
+        filtered_names = filtered_names or {}
         apps = snapshot.get("apps") or []
         if not apps:
-            lines.append("- 未记录到应用结果。")
+            if filtered_names.get("exact_match"):
+                lines.append(f"- 未记录到与“{snapshot.get('query') or ''}”精确匹配的应用结果。")
+            else:
+                lines.append("- 未记录到应用结果。")
+            dropped = filtered_names.get("dropped_names") or []
+            if dropped:
+                lines.append("- 已排除：" + "、".join(str(item) for item in dropped[:6]))
         for app in apps[:8]:
             lines.append(
                 f"- [{_store_label(app.get('store'))}] {app.get('name') or app.get('app_id')}: "
@@ -1910,6 +2586,85 @@ def _normalize_store_list(value: Any) -> list[str]:
     return stores
 
 
+def _extract_target_market_stores(text: Any) -> list[str]:
+    lowered = str(text or "").lower()
+    scoped_aliases = {
+        "apple_app_store": ("apple app store", "app store", "苹果"),
+        "google_play": ("google play", "谷歌"),
+        "oppo_app_market": ("oppo", "欢太", "heytap"),
+        "xiaomi_app_store": ("xiaomi", "小米"),
+        "vivo_app_store": ("vivo",),
+        "huawei_appgallery": ("huawei", "appgallery", "华为"),
+        "honor_app_market": ("honor", "荣耀"),
+    }
+    context_terms = ("应用商店", "应用市场", "软件商店", "商店", "市场", "店里", "里面", "平台")
+    for store, aliases in scoped_aliases.items():
+        for alias in aliases:
+            if alias in lowered and any(term in lowered for term in context_terms):
+                return [store]
+    return []
+
+
+def _normalize_string_list(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    raw_items = value if isinstance(value, list) else [value]
+    items: list[str] = []
+    for item in raw_items:
+        text = str(item or "").strip()
+        if text and text not in items:
+            items.append(text)
+    return items
+
+
+def _unique_texts(values: list[Any]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _normalize_market_app_name(value: Any) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"\b(app|APP)\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"[\s：:，,。！？?、；;“”\"'`~!@#$%^&*()\[\]{}<>|\\/]+", "", text)
+    return text.strip()
+
+
+def _looks_like_exact_app_request(text: Any) -> bool:
+    clean = str(text or "").lower()
+    return any(
+        marker in clean
+        for marker in (
+            "只要",
+            "只是",
+            "就只是",
+            "不要其他",
+            "其他的不要",
+            "其他app不用看",
+            "其他 app 不用看",
+            "指名",
+            "指定",
+            "精确",
+            "准确",
+            "这个app",
+            "这个 app",
+        )
+    )
+
+
+def _infer_market_exclude_terms(text: Any) -> list[str]:
+    clean = str(text or "")
+    terms: list[str] = []
+    known_variants = ("极速版", "火山版", "商城版", "HD", "hd", "国际版", "青春版")
+    for term in known_variants:
+        if term in clean and any(marker in clean for marker in ("不要", "不包含", "不是", "别发", "别查", "排除")):
+            terms.append(term)
+    return terms
+
+
 def _clean_market_query(value: Any) -> str:
     text = str(value or "")
     text = re.sub(r"[\s：:，,。！？?、；;“”\"'`~!@#$%^&*()\[\]{}<>|\\/]+", " ", text)
@@ -2011,6 +2766,13 @@ def _format_store_status(status: JsonDict) -> str:
     if state == "failed":
         return f"- {store}：{message or '查询失败'}"
     return f"- {store}：{message or '未解析到匹配结果'}"
+
+
+def _json_safe(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _optional_confidence(value: Any) -> float | None:

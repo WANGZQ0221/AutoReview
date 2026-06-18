@@ -67,14 +67,82 @@ class FakeMarketSearcher:
         )
 
 
-class FakeLlmClient:
-    def __init__(self, decision):
-        self.decision = decision
+class FakeVariantMarketSearcher:
+    def __init__(self):
         self.calls = []
+
+    def search_competitors(self, query, limit=8, stores=None):
+        self.calls.append({"query": query, "limit": limit, "stores": stores})
+        return AppMarketSearchResult(
+            query=query,
+            apps=[
+                AppMarketListing(
+                    store="oppo_app_market",
+                    app_id="a",
+                    name="抖音极速版",
+                    downloads=13760000000,
+                    downloads_text="137.6 亿次",
+                ),
+                AppMarketListing(
+                    store="oppo_app_market",
+                    app_id="b",
+                    name="抖音火山版",
+                    downloads=7980000000,
+                    downloads_text="79.8 亿次",
+                ),
+            ],
+            store_statuses=[{"store": "oppo_app_market", "status": "ok", "result_count": 2}],
+        )
+
+
+class FakePackagingAgent:
+    def __init__(self):
+        self.package_one_calls = []
+        self.package_batch_calls = []
+
+    def package_one(self, *, app_name="", pkg_name="", channels=None, dry_run=False):
+        self.package_one_calls.append(
+            {"app_name": app_name, "pkg_name": pkg_name, "channels": channels or [], "dry_run": dry_run}
+        )
+        return {
+            "project_dir": "D:/project",
+            "channels": ["xm1067"],
+            "packconfig": "xm1067",
+            "resolved_package": {
+                "app_name": app_name or "八年级语文下册",
+                "pkg_name": pkg_name,
+                "channel": "xm1067",
+                "version_code": "68",
+                "version_name": "3.1067.38.2",
+            },
+            "latest_apks": ["D:/project/apk/out.apk"],
+        }
+
+    def package_batch(self, *, dry_run=False, continue_on_error=True):
+        self.package_batch_calls.append({"dry_run": dry_run, "continue_on_error": continue_on_error})
+        return [{"ok": True, "name": "job-1", "channels": ["xm1067"]}]
+
+
+class FakeLlmClient:
+    def __init__(self, decision=None, *, tool_call=None, tool_summary=""):
+        self.decision = decision
+        self.tool_call = tool_call
+        self.tool_summary = tool_summary
+        self.calls = []
+        self.tool_calls = []
+        self.summary_calls = []
 
     def interpret(self, message, session):
         self.calls.append((message, session))
-        return dict(self.decision)
+        return dict(self.decision or {})
+
+    def choose_tool(self, message, session, tools):
+        self.tool_calls.append((message, session, tools))
+        return dict(self.tool_call or {"tool": "none", "arguments": {}, "confidence": 0.0})
+
+    def summarize_tool_result(self, message, session, tool_call, tool_result):
+        self.summary_calls.append((message, session, tool_call, tool_result))
+        return self.tool_summary
 
 
 class FakeFeishuClient:
@@ -234,6 +302,154 @@ class ReviewAgentTest(unittest.TestCase):
         self.assertIn("审核不通过", response.text)
         self.assertIn("资质缺失", response.text)
 
+    def test_package_message_runs_packaging_agent(self):
+        fake_packaging = FakePackagingAgent()
+        agent = ReviewAgent(JsonStateStore(Path(tempfile.mkdtemp()) / "state.json"))
+        agent.packaging_agent = fake_packaging
+
+        response = agent.handle_message("chat-1", "打包 com.pelbs.book1067 dry-run")
+
+        self.assertIn("打包预演", response.text)
+        self.assertEqual(fake_packaging.package_one_calls[0]["pkg_name"], "com.pelbs.book1067")
+        self.assertTrue(fake_packaging.package_one_calls[0]["dry_run"])
+
+    def test_batch_package_message_runs_packaging_agent(self):
+        fake_packaging = FakePackagingAgent()
+        agent = ReviewAgent(JsonStateStore(Path(tempfile.mkdtemp()) / "state.json"))
+        agent.packaging_agent = fake_packaging
+
+        response = agent.handle_message("chat-1", "批量打包 dry-run")
+
+        self.assertIn("批量打包预演", response.text)
+        self.assertTrue(fake_packaging.package_batch_calls[0]["dry_run"])
+
+    def test_package_message_accepts_app_name(self):
+        fake_packaging = FakePackagingAgent()
+        agent = ReviewAgent(JsonStateStore(Path(tempfile.mkdtemp()) / "state.json"))
+        agent.packaging_agent = fake_packaging
+
+        response = agent.handle_message("chat-1", "打包 八年级语文下册 dry-run")
+
+        self.assertIn("打包预演", response.text)
+        self.assertEqual(fake_packaging.package_one_calls[0]["app_name"], "八年级语文下册")
+
+    def test_llm_package_intent_runs_without_rule_phrase(self):
+        fake_packaging = FakePackagingAgent()
+        llm = FakeLlmClient(
+            {
+                "intent": "package_apk",
+                "confidence": 0.9,
+                "app_name": "八年级语文下册",
+                "dry_run": True,
+            }
+        )
+        agent = ReviewAgent(JsonStateStore(Path(tempfile.mkdtemp()) / "state.json"), llm_client=llm)
+        agent.packaging_agent = fake_packaging
+
+        response = agent.handle_message("chat-1", "把八年级语文下册弄一个测试包")
+
+        self.assertIn("打包预演", response.text)
+        self.assertEqual(fake_packaging.package_one_calls[0]["app_name"], "八年级语文下册")
+        self.assertTrue(fake_packaging.package_one_calls[0]["dry_run"])
+
+    def test_llm_batch_package_intent_runs(self):
+        fake_packaging = FakePackagingAgent()
+        llm = FakeLlmClient({"intent": "batch_package", "confidence": 0.9, "dry_run": True})
+        agent = ReviewAgent(JsonStateStore(Path(tempfile.mkdtemp()) / "state.json"), llm_client=llm)
+        agent.packaging_agent = fake_packaging
+
+        response = agent.handle_message("chat-1", "今天先把这一批都预演一下")
+
+        self.assertIn("批量打包预演", response.text)
+        self.assertTrue(fake_packaging.package_batch_calls[0]["dry_run"])
+
+    def test_package_lookup_by_app_name(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            project_dir = base / "android-project"
+            (project_dir / "app").mkdir(parents=True)
+            (project_dir / "app" / "build.gradle").write_text("android {}", encoding="utf-8")
+            (project_dir / "jksconfig.txt").write_text("signing=value", encoding="utf-8")
+            (project_dir / "packlist.xls").write_text(
+                "\n".join(
+                    [
+                        "h0",
+                        "h1",
+                        "h2",
+                        "\t四年级英语点读\txm1016\twx\tcom.pelbs.book1016\t\t\t64\t\t\t3.1016.34.2",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config_path = base / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (base / "package.js").write_text("", encoding="utf-8")
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), oppo_config_path=config_path)
+
+            response = agent.handle_message("chat-1", "四年级英语点读对应什么包")
+
+            self.assertIn("com.pelbs.book1016", response.text)
+            self.assertIn("xm1016", response.text)
+
+    def test_llm_package_lookup_intent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            project_dir = base / "android-project"
+            (project_dir / "app").mkdir(parents=True)
+            (project_dir / "app" / "build.gradle").write_text("android {}", encoding="utf-8")
+            (project_dir / "jksconfig.txt").write_text("signing=value", encoding="utf-8")
+            (project_dir / "packlist.xls").write_text(
+                "\n".join(
+                    [
+                        "h0",
+                        "h1",
+                        "h2",
+                        "\t八年级语文下册\txm1067\twx\tcom.pelbs.book1067\t\t\t68\t\t\t3.1067.38.2",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config_path = base / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (base / "package.js").write_text("", encoding="utf-8")
+            llm = FakeLlmClient(
+                {
+                    "intent": "package_lookup",
+                    "confidence": 0.9,
+                    "app_name": "八年级语文下册",
+                }
+            )
+            agent = ReviewAgent(
+                JsonStateStore(base / "state.json"),
+                oppo_config_path=config_path,
+                llm_client=llm,
+            )
+
+            response = agent.handle_message("chat-1", "这个名字对应哪个安装包")
+
+            self.assertIn("com.pelbs.book1067", response.text)
+            self.assertIn("xm1067", response.text)
+
     def test_query_oppo_status_remembers_app_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = self._write_minimal_config(Path(temp_dir))
@@ -300,6 +516,168 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("四级单词竞品", response.text)
             self.assertEqual(session["last_market_search"]["query"], "英语四级单词")
             self.assertIn("最近竞品搜索", status)
+
+    def test_market_search_exact_match_filters_out_variants(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            searcher = FakeVariantMarketSearcher()
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "market_search",
+                    "confidence": 0.9,
+                    "arguments": {
+                        "query": "抖音",
+                        "exact_match": True,
+                        "exclude_terms": ["极速版", "火山版"],
+                        "target_stores": ["oppo_app_market"],
+                    },
+                },
+                tool_summary="我只查了抖音本体，OPPO 当前公开结果里没有精确匹配。\n- 已排除：抖音极速版、抖音火山版",
+            )
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: searcher,
+                llm_client=llm,
+            )
+
+            response = agent.handle_message("chat-1", "只要抖音APP，不要极速版和火山版")
+
+            self.assertIn("我只查了抖音本体", response.text)
+            self.assertIn("已排除：抖音极速版、抖音火山版", response.text)
+            self.assertEqual(searcher.calls[0]["stores"], {"oppo_app_market"})
+            self.assertEqual(llm.summary_calls[0][2]["tool"], "market_search")
+            self.assertIn("filtered_names", llm.summary_calls[0][3]["data"])
+
+    def test_market_search_one_shot_store_scope(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            searcher = FakeVariantMarketSearcher()
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "market_search",
+                    "confidence": 0.9,
+                    "arguments": {
+                        "query": "抖音",
+                        "target_stores": ["oppo_app_market"],
+                    },
+                }
+            )
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: searcher,
+                llm_client=llm,
+            )
+
+            agent.handle_message("chat-1", "你现在搜索一下OPPO应用商店，看下抖音这个APP的下载量是多少")
+
+            self.assertEqual(searcher.calls[0]["stores"], {"oppo_app_market"})
+
+    def test_llm_tool_call_executes_packaging_and_summarizes_result(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_packaging = FakePackagingAgent()
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "package_apk",
+                    "confidence": 0.93,
+                    "arguments": {"app_name": "八年级语文下册", "dry_run": True},
+                },
+                tool_summary="已按八年级语文下册做打包预演，渠道是 xm1067。",
+            )
+            agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"), llm_client=llm)
+            agent.packaging_agent = fake_packaging
+
+            response = agent.handle_message("chat-1", "先给八年级语文下册出一个测试包")
+
+            self.assertIn("打包预演", llm.summary_calls[0][3]["text"])
+            self.assertIn("已按八年级语文下册", response.text)
+            self.assertEqual(fake_packaging.package_one_calls[0]["app_name"], "八年级语文下册")
+            self.assertTrue(fake_packaging.package_one_calls[0]["dry_run"])
+            self.assertEqual(response.data["tool_call"]["tool"], "package_apk")
+
+    def test_llm_tool_call_can_view_and_stage_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "stage_config_update",
+                    "confidence": 0.91,
+                    "arguments": {"config_assignment": "submission.version_code=101"},
+                },
+                tool_summary="版本号修改已暂存，还没有写入配置文件。",
+            )
+            agent = ReviewAgent(
+                JsonStateStore(base_dir / "state.json"),
+                oppo_config_path=config_path,
+                llm_client=llm,
+            )
+
+            response = agent.handle_message("chat-1", "版本号先改成 101，等我确认再保存", "user-1")
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+            session = agent.state_store.get_session("chat-1")
+
+            self.assertIn("暂存", response.text)
+            self.assertEqual(session["pending_config_patch"]["submission.version_code"], "101")
+            self.assertEqual(raw["submission"]["version_code"], "100")
+            self.assertEqual(llm.summary_calls[0][2]["tool"], "stage_config_update")
+
+    def test_llm_tool_call_can_bind_material(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            upload_path = base_dir / "copyright.pdf"
+            upload_path.write_bytes(b"pdf")
+            state = JsonStateStore(base_dir / "state.json")
+            state.update_session(
+                "chat-1",
+                {
+                    "last_upload": {
+                        "path": str(upload_path),
+                        "file_name": "copyright.pdf",
+                        "resource_type": "file",
+                    }
+                },
+            )
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "bind_material",
+                    "confidence": 0.9,
+                    "arguments": {"material_label": "版权证明"},
+                },
+                tool_summary="版权证明已绑定，并完成了一次提交检查。",
+            )
+            agent = ReviewAgent(state, oppo_config_path=config_path, llm_client=llm)
+
+            response = agent.handle_message("chat-1", "把刚上传的文件作为版权证明", "user-1")
+
+            self.assertIn("版权证明已绑定", response.text)
+            self.assertEqual(response.data["tool_call"]["tool"], "bind_material")
+            self.assertIn("bind_material", response.data["tool_result"]["data"]["intent"])
+
+    def test_llm_tool_call_can_analyze_last_image(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = JsonStateStore(Path(temp_dir) / "state.json")
+            state.update_session(
+                "chat-1",
+                {
+                    "last_image_analysis": {
+                        "ocr_text": "APK相似度0.92，请勿重复提交，请补充ICP备案网站",
+                    }
+                },
+            )
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "analyze_last_image",
+                    "confidence": 0.9,
+                    "arguments": {},
+                },
+                tool_summary="最近图片已分析：不建议原包直接重提，需要补 ICP 证明。",
+            )
+            agent = ReviewAgent(state, llm_client=llm)
+
+            response = agent.handle_message("chat-1", "分析一下刚才那张截图", "user-1")
+
+            self.assertIn("最近图片已分析", response.text)
+            self.assertEqual(response.data["tool_call"]["tool"], "analyze_last_image")
+            self.assertIn("apk_similarity_or_template", response.data["tool_result"]["data"]["categories"])
 
     def test_market_search_formats_store_status_summary(self):
         class StatusMarketSearcher:

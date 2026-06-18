@@ -19,7 +19,7 @@ from .image_analysis import ImageAnalysisClient, extract_ocr_text, format_image_
 
 
 JsonDict = dict[str, Any]
-BOT_MENTION_NAMES = ("应用发布agent", "AutoReview", "autoreview")
+BOT_MENTION_NAMES = ("应用发布agent", "提交助手", "AutoReview", "autoreview")
 
 
 class FeishuWebhookApp:

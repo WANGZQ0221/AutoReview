@@ -12,6 +12,7 @@ AutoReview 用于把 Android 应用的“打包、提交、查询、审核协作
 - 只给 APK 提交：已支持 `--apk` 覆盖本次 APK，其他图标、截图、版权证明等材料可用 `--reuse-remote-materials` 从 OPPO 平台已有版本复用。
 - 批量提交：已支持 `batch-submit`，通过 `config/oppo_batch.json` 批量提交多个 APK/配置。
 - 批量打包入口：已支持 `package-apk` 和 `batch-package`，包装旧的 `package.js` 流程。
+- 打包 Agent：已支持通过飞书/HTTP agent 文本触发单包打包和批量打包。
 - 飞书长连接机器人：已支持飞书长连接收消息、回复消息、接收文本/图片/文件。
 - OCR 与驳回分析：已支持图片 OCR，OPPO 驳回截图可自动分析，并生成整改清单。
 - 飞书配置编辑：已支持查看配置、暂存修改、确认保存、自动备份；密钥字段不展示、不允许通过飞书改。
@@ -49,6 +50,7 @@ AutoReview 用于把 Android 应用的“打包、提交、查询、审核协作
 - `config/llm_config.example.json`：共享大模型配置模板，可被各厂商配置复用。
 - `config/oppo_batch.example.json`：OPPO 批量提交配置模板。
 - `config/package_batch.example.json`：批量打包配置模板。
+- `config/packaging.example.json`：打包 Agent 配置字段示例，可合并到主配置。
 - `config/xiaomi_submission.example.json`：小米配置模板。
 - `config/honor_submission.example.json`：荣耀配置模板。
 - `config/vivo_submission.example.json`：vivo 配置模板。
@@ -286,6 +288,48 @@ D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py batch-package 
 ```
 
 打包包装器会写目标项目的 `packconfig.txt`，如果原文件存在，会先备份到目标项目的 `backups/` 目录。
+
+## 打包 Agent
+
+如果要通过飞书机器人或 HTTP agent 触发打包，在主配置文件里增加：
+
+```json
+{
+  "packaging": {
+    "project_dir": "D:/Workship/Pelbs/ClientPelbs/jsb-default/frameworks/runtime-src/proj.android-studio",
+    "script": "D:/AutoReview/package.js",
+    "batch_file": "config/package_batch.json",
+    "node_command": "node",
+    "skip_start": true
+  }
+}
+```
+
+可用消息：
+
+```text
+帮我查一下八年级语文下册对应哪个包
+把八年级语文下册弄一个测试包
+八年级语文下册对应什么包
+查包：八年级语文下册
+打包 八年级语文下册 dry-run
+打包 八年级语文下册
+打包 com.pelbs.book1067 dry-run
+打包 com.pelbs.book1067
+打包渠道 xm1067
+批量打包 dry-run
+批量打包
+```
+
+说明：
+
+- 如果配置了 LLM，飞书消息会先由 LLM 理解成 `package_lookup`、`package_apk`、`batch_package` 等结构化意图；本地规则只做兜底和安全校验。
+- `八年级语文下册对应什么包` 会从 `packlist.xls` 查询应用名、包名、渠道、版本号。
+- `打包 八年级语文下册` 会先按应用名查 `packlist.xls`，再解析渠道打包。
+- `打包 com.pelbs.book1067` 会从 `packlist.xls` 自动解析渠道，例如解析到 `xm1067` 后再打包。
+- `打包渠道 xm1067` 会直接写入该渠道到 `packconfig.txt` 后打包。
+- `批量打包` 使用 `packaging.batch_file` 指向的 JSON 清单。
+- `dry-run` 只验证配置和解析结果，不执行 Node 打包。
 
 ## 打包后直接提交
 
