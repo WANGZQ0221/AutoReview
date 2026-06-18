@@ -132,6 +132,9 @@ def apply_config_patch_to_targets(
         results.append(apply_config_patch_to_file(main_config_path, main_patch))
     if packaging_patch:
         target = Path(packaging_config_path) if packaging_config_path else Path(main_config_path).parent / "packaging.json"
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('{\n  "packaging": {}\n}\n', encoding="utf-8")
         results.append(apply_config_patch_to_file(target, packaging_patch))
 
     return {

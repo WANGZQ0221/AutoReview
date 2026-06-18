@@ -676,6 +676,100 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("已全部显示，共 12 个", response.text)
             self.assertNotIn("应用名：1年级语文下册", response.text)
 
+    def test_package_lookup_followup_supports_last_page_and_last_count(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = base / "config.json"
+            project_dir = base / "android-project"
+            project_dir.mkdir()
+            snapshot_path = base / "packlist-scan.json"
+            entries = [
+                {
+                    "sheet": "CfgGameConfig",
+                    "row": 100 + idx,
+                    "channel": f"xm50{idx:02d}",
+                    "app_name": f"{idx + 1}年级语文上册",
+                    "pkg_name": f"com.pelbs.book50{idx:02d}",
+                    "version_code": "68",
+                    "version_name": f"3.50{idx:02d}.38.2",
+                }
+                for idx in range(12)
+            ]
+            snapshot_path.write_text(json.dumps({"ok": True, "result": entries}, ensure_ascii=False), encoding="utf-8")
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                            "packlist_scan_file": str(snapshot_path),
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (base / "package.js").write_text("", encoding="utf-8")
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), oppo_config_path=config_path)
+
+            agent.handle_message("chat-1", "语文都有那些年级的包？")
+            response = agent.handle_message("chat-1", "显示最后3个")
+
+            self.assertIn("应用名：10年级语文上册", response.text)
+            self.assertIn("应用名：12年级语文上册", response.text)
+            self.assertNotIn("应用名：1年级语文上册", response.text)
+
+    def test_continue_packaging_test_does_not_turn_package_lookup_page(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = base / "config.json"
+            project_dir = base / "android-project"
+            project_dir.mkdir()
+            snapshot_path = base / "packlist-scan.json"
+            snapshot_path.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "result": [
+                            {
+                                "sheet": "CfgGameConfig",
+                                "row": 1,
+                                "channel": "xm11038",
+                                "app_name": "三年级语文上册",
+                                "pkg_name": "com.pelbs.book11038",
+                                "version_code": "68",
+                                "version_name": "3.11038.38.2",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                            "packlist_scan_file": str(snapshot_path),
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (base / "package.js").write_text("", encoding="utf-8")
+            llm = FakeLlmClient({"intent": "chat", "confidence": 1, "reply": "收到，继续打包测试。"})
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), oppo_config_path=config_path, llm_client=llm)
+            agent.packaging_agent = FakePackagingAgent()
+            agent.handle_message("chat-1", "语文都有那些年级的包？")
+
+            response = agent.handle_message("chat-1", "继续打包测试")
+
+            self.assertNotEqual(response.data.get("intent"), "package_lookup")
+            self.assertNotIn("包列表：", response.text)
+
     def test_packaging_catalog_request_lists_all_packages_with_pagination(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)
@@ -1581,6 +1675,36 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertEqual(session["long_term_memory"]["preferences"]["tone"], "简洁")
             self.assertIn("长期记忆：1 条", status)
 
+    def test_llm_context_is_compact_for_large_status_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = JsonStateStore(Path(temp_dir) / "state.json")
+            state.update_session(
+                "chat-1",
+                {
+                    "app_info": {"app_name": "示例应用", "pkg_name": "com.example.app", "version_code": "100"},
+                    "last_oppo_status": {
+                        "pkg_name": "com.example.app",
+                        "version_code": "100",
+                        "review_state": "rejected",
+                        "task": {"task_state": "3", "err_msg": "任务失败"},
+                        "app_info": {
+                            "app_name": "示例应用",
+                            "audit_status_name": "审核不通过",
+                            "huge_blob": "X" * 5000,
+                        },
+                    },
+                },
+            )
+            llm = FakeLlmClient({"intent": "chat", "confidence": 1, "reply": "好的。"})
+            agent = ReviewAgent(state, llm_client=llm)
+
+            agent.handle_message("chat-1", "你好", "user-1")
+
+            session_context = llm.calls[0][1]
+            compact_status = session_context["session"]["last_oppo_status"]
+            self.assertNotIn("huge_blob", json.dumps(compact_status, ensure_ascii=False))
+            self.assertEqual(compact_status["audit_status_name"], "审核不通过")
+
     def test_llm_low_confidence_reply_is_lightly_formatted(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             llm = FakeLlmClient(
@@ -1800,6 +1924,34 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertEqual(packaging["packaging"]["script"], "D:\\AutoReview\\package.js")
             self.assertIn("配置已保存", confirm.text)
 
+    def test_confirm_packaging_config_update_reloads_packaging_agent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = self._write_minimal_config(base)
+            config_dir = base / "config"
+            old_script = base / "old-package.js"
+            new_script = base / "new-package.js"
+            old_script.write_text("", encoding="utf-8")
+            new_script.write_text("", encoding="utf-8")
+            packaging_path = config_dir / "packaging.json"
+            packaging_path.write_text(
+                json.dumps(
+                    {"packaging": {"script": str(old_script), "project_dir": str(base / "proj")}},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            agent = ReviewAgent(
+                JsonStateStore(base / "state.json"),
+                oppo_config_path=config_path,
+                packaging_config_path=packaging_path,
+            )
+
+            agent.handle_message("chat-1", f"设置提交配置：packaging.script={new_script}")
+            agent.handle_message("chat-1", "确认保存配置")
+
+            self.assertEqual(agent.packaging_agent.settings.script_path, new_script.resolve())
+
     def test_natural_language_packaging_script_update_is_mapped_to_packaging_script(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)
@@ -1851,6 +2003,44 @@ class ReviewAgentTest(unittest.TestCase):
 
             self.assertIn("当前打包配置（packaging.json）", response.text)
             self.assertIn("打包脚本：D:\\AutoReview\\package.js", response.text)
+
+    def test_file_search_tool_finds_old_path_residue(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = self._write_minimal_config(base)
+            project_dir = base / "project"
+            project_dir.mkdir()
+            (project_dir / "build.gradle").write_text(
+                "scriptPath = 'D:\\development_sercer\\AutoReview\\package.js'\n",
+                encoding="utf-8",
+            )
+            packaging_path = base / "config" / "packaging.json"
+            packaging_path.write_text(
+                json.dumps(
+                    {"packaging": {"project_dir": str(project_dir), "script": str(base / "package.js")}},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "file_search",
+                    "confidence": 0.9,
+                    "arguments": {"patterns": ["D:\\development_sercer\\AutoReview\\package.js"]},
+                }
+            )
+            agent = ReviewAgent(
+                JsonStateStore(base / "state.json"),
+                oppo_config_path=config_path,
+                packaging_config_path=packaging_path,
+                llm_client=llm,
+            )
+
+            response = agent.handle_message("chat-1", "在项目里全文搜索 D:\\development_sercer\\AutoReview\\package.js")
+
+            self.assertIn("全文搜索结果", response.text)
+            self.assertIn("build.gradle", response.text)
+            self.assertEqual(response.data["tool_call"]["tool"], "file_search")
 
     def test_batch_config_update_supports_pic_paths(self):
         with tempfile.TemporaryDirectory() as temp_dir:

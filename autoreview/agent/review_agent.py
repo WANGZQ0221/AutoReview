@@ -132,6 +132,9 @@ class ReviewAgent:
             return PackagingAgent(self.oppo_config_path)
         return PackagingAgent(None)
 
+    def _reload_packaging_agent(self) -> None:
+        self.packaging_agent = self._make_packaging_agent()
+
     def handle_message(self, session_id: str, text: str, sender_id: str | None = None) -> AgentResponse:
         clean_text = self._normalize_incoming_text(text)
         trace_id = self._start_trace(session_id, clean_text, sender_id=sender_id)
@@ -683,6 +686,7 @@ class ReviewAgent:
                 "sender_id": sender_id,
             },
         )
+        self._reload_packaging_agent()
         check = self.check_submission(session_id)
         result_items = result.get("results") or []
         backup_names = [Path(item["backup_path"]).name for item in result_items if item.get("backup_path")]
@@ -1013,9 +1017,81 @@ class ReviewAgent:
 
     def _llm_context(self, session_id: str) -> JsonDict:
         session = self.state_store.get_session(session_id)
+        conversation = session.get("conversation_history") or []
+        recent_conversation = []
+        for item in conversation[-20:]:
+            if not isinstance(item, dict):
+                continue
+            recent_conversation.append(
+                {
+                    "user": _shorten(item.get("user"), 160),
+                    "assistant": _shorten(item.get("assistant"), 220),
+                    "intent": str(item.get("intent") or ""),
+                }
+            )
+        last_package_lookup = session.get("last_package_lookup") or {}
+        lookup_matches = last_package_lookup.get("matches") or []
+        compact_lookup = {}
+        if last_package_lookup:
+            compact_lookup = {
+                "query": str(last_package_lookup.get("query") or ""),
+                "page_size": int(last_package_lookup.get("page_size") or 0),
+                "next_offset": int(last_package_lookup.get("next_offset") or 0),
+                "match_count": len(lookup_matches),
+                "sample_matches": [
+                    {
+                        "app_name": str(item.get("app_name") or ""),
+                        "pkg_name": str(item.get("pkg_name") or ""),
+                        "channel": str(item.get("channel") or ""),
+                        "version_code": str(item.get("version_code") or ""),
+                    }
+                    for item in lookup_matches[:5]
+                    if isinstance(item, dict)
+                ],
+            }
+        last_market_search = session.get("last_market_search") or {}
+        compact_market_search = {}
+        if last_market_search:
+            market_apps = last_market_search.get("apps") or []
+            compact_market_search = {
+                "query": str(last_market_search.get("query") or ""),
+                "result_count": len(market_apps),
+                "apps": [
+                    {
+                        "store": str(item.get("store") or ""),
+                        "name": str(item.get("name") or ""),
+                        "downloads_text": str(item.get("downloads_text") or ""),
+                    }
+                    for item in market_apps[:4]
+                    if isinstance(item, dict)
+                ],
+            }
+        app_info = session.get("app_info") or {}
+        compact_status = session.get("last_oppo_status") or {}
+        compact_status = {
+            "pkg_name": str(compact_status.get("pkg_name") or ""),
+            "version_code": str(compact_status.get("version_code") or ""),
+            "review_state": str(compact_status.get("review_state") or ""),
+            "task_state": str((compact_status.get("task") or {}).get("task_state") or ""),
+            "task_error": _shorten((compact_status.get("task") or {}).get("err_msg"), 120),
+            "app_name": str((compact_status.get("app_info") or {}).get("app_name") or ""),
+            "audit_status_name": str((compact_status.get("app_info") or {}).get("audit_status_name") or ""),
+        }
         return {
-            "session": session,
-            "recent_conversation": session.get("conversation_history") or [],
+            "session": {
+                "app_info": {
+                    "app_name": str(app_info.get("app_name") or ""),
+                    "pkg_name": str(app_info.get("pkg_name") or ""),
+                    "version_code": str(app_info.get("version_code") or ""),
+                },
+                "last_package_lookup": compact_lookup,
+                "last_market_search": compact_market_search,
+                "last_market_search_request": _json_safe(session.get("last_market_search_request") or {}),
+                "last_market_filtered_names": _json_safe(session.get("last_market_filtered_names") or {}),
+                "last_oppo_status": compact_status,
+                "pending_config_patch": _json_safe(session.get("pending_config_patch") or {}),
+            },
+            "recent_conversation": recent_conversation,
             "long_term_memory": self._structured_long_term_memory(session_id),
             "default_config": {
                 "app_info": self._config_app_info(),
@@ -1026,6 +1102,13 @@ class ReviewAgent:
             },
             "preferences": {
                 "market_stores": self._market_store_preferences(session_id),
+            },
+            "packaging": {
+                "config_path": str(self.packaging_config_path) if self.packaging_config_path else "",
+                "project_dir": str(getattr(getattr(self.packaging_agent, "settings", None), "project_dir", "") or ""),
+                "script_path": str(getattr(getattr(self.packaging_agent, "settings", None), "script_path", "") or ""),
+                "batch_file": str(getattr(getattr(self.packaging_agent, "settings", None), "batch_file", "") or ""),
+                "packlist_scan_file": str(getattr(getattr(self.packaging_agent, "settings", None), "packlist_scan_file", "") or ""),
             },
             "supported_market_stores": [
                 {"store": store, "label": label}
@@ -1590,6 +1673,9 @@ class ReviewAgent:
                 "properties": {
                     "app_name": {"type": "string"},
                     "query": {"type": "string"},
+                    "offset": {"type": "integer"},
+                    "page_size": {"type": "integer"},
+                    "last_page": {"type": "boolean"},
                 },
                 "additionalProperties": True,
             },
@@ -1651,6 +1737,20 @@ class ReviewAgent:
                 "additionalProperties": True,
             },
             self._tool_market_download_snapshot,
+        )
+        registry.register(
+            "file_search",
+            "在 AutoReview 相关配置和项目文件中全文搜索关键词或旧路径，用于排查配置残留。",
+            {
+                "type": "object",
+                "properties": {
+                    "patterns": {"type": "array", "items": {"type": "string"}},
+                    "pattern": {"type": "string"},
+                    "max_results": {"type": "integer"},
+                },
+                "additionalProperties": True,
+            },
+            self._tool_file_search,
         )
         return registry
 
@@ -1868,6 +1968,9 @@ class ReviewAgent:
             "intent": "package_lookup",
             "app_name": str(call.arguments.get("app_name") or ""),
             "query": str(call.arguments.get("query") or ""),
+            "offset": call.arguments.get("offset"),
+            "page_size": call.arguments.get("page_size"),
+            "last_page": bool(call.arguments.get("last_page")),
         }
         return self._run_packaging_lookup(
             str(context.get("session_id") or ""),
@@ -1895,6 +1998,13 @@ class ReviewAgent:
             str(context.get("text") or ""),
             {"intent": "batch_package", "dry_run": bool(call.arguments.get("dry_run"))},
         )
+
+    def _tool_file_search(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        raw_patterns = call.arguments.get("patterns")
+        patterns = _normalize_string_list(raw_patterns if raw_patterns else call.arguments.get("pattern"))
+        if not patterns:
+            patterns = self._extract_file_search_patterns(str(context.get("text") or ""))
+        return self._search_local_files(patterns, max_results=int(call.arguments.get("max_results") or 20))
 
     def _tool_market_search(self, call: ToolCall, context: JsonDict) -> AgentResponse:
         query = str(call.arguments.get("query") or "").strip()
@@ -2261,12 +2371,14 @@ class ReviewAgent:
 
     @staticmethod
     def _looks_like_packaging_pagination_request(text: str) -> bool:
+        if any(term in text for term in ("打包", "测试", "配置", "package.js", "路径", "脚本", "执行")):
+            return False
         return any(
             term in text
             for term in (
                 "还有呢",
                 "下一页",
-                "继续",
+                "继续发",
                 "后面的",
                 "后面还有",
                 "更高年级",
@@ -2274,8 +2386,27 @@ class ReviewAgent:
                 "没回复完全",
                 "没说完",
                 "接着发",
+                "最后一页",
+                "最后",
             )
         )
+
+    @staticmethod
+    def _extract_packaging_page_size(text: str) -> int | None:
+        match = re.search(r"(?:显示|看|列出)?最后\s*(\d+)\s*个", text)
+        if match:
+            return max(1, int(match.group(1)))
+        return None
+
+    @staticmethod
+    def _extract_file_search_patterns(text: str) -> list[str]:
+        patterns: list[str] = []
+        for match in re.finditer(r"([A-Za-z]:[\\/][^\s，,。；;\"'`]+)", text):
+            patterns.append(match.group(1).strip())
+        for token in ("development_sercer", "package.js", "AutoReview"):
+            if token in text and token not in patterns:
+                patterns.append(token)
+        return patterns
 
     def _configured_image_analysis_url(self, key: str) -> str:
         if not self.oppo_config_path or not self.oppo_config_path.exists():
@@ -2721,12 +2852,17 @@ class ReviewAgent:
         matches = lookup.get("matches") or []
         if not matches:
             return None
+        page_size = self._extract_packaging_page_size(text) or int(lookup.get("page_size") or 10)
+        next_offset = int(lookup.get("next_offset") or 0)
+        offset = next_offset
+        if _looks_like_last_packaging_page_request(text):
+            offset = max(0, len(matches) - page_size)
         return self._render_packaging_lookup_page(
             session_id,
             query=str(lookup.get("query") or ""),
             matches=matches,
-            offset=int(lookup.get("next_offset") or 0),
-            page_size=int(lookup.get("page_size") or 10),
+            offset=offset,
+            page_size=page_size,
             heading=str(lookup.get("heading") or ""),
         )
 
@@ -2813,6 +2949,8 @@ class ReviewAgent:
 
     def _run_packaging_lookup(self, session_id: str, text: str, decision: JsonDict) -> AgentResponse | None:
         query = str(decision.get("app_name") or decision.get("query") or self._extract_packaging_lookup_query(text)).strip()
+        offset = _optional_int(decision.get("offset"))
+        page_size = _optional_int(decision.get("page_size"))
         if not query:
             return AgentResponse(
                 _format_error_message(
@@ -2834,12 +2972,16 @@ class ReviewAgent:
                 _format_error_message("未找到对应包", f"没找到和“{query}”对应的包。", ["换一个更完整的应用名再查。", "也可以发送“都可以打哪些包”查看列表。"]),
                 {"intent": "package_lookup", "query": query, "matches": []},
             )
+        resolved_page_size = page_size or self._extract_packaging_page_size(text) or 10
+        resolved_offset = offset or 0
+        if decision.get("last_page") or _looks_like_last_packaging_page_request(text):
+            resolved_offset = max(0, len(matches) - resolved_page_size)
         return self._render_packaging_lookup_page(
             session_id,
             query=query,
             matches=[entry.to_dict() for entry in matches],
-            offset=0,
-            page_size=10,
+            offset=resolved_offset,
+            page_size=resolved_page_size,
         )
 
     def _extract_packaging_lookup_query(self, text: str) -> str:
@@ -2957,6 +3099,77 @@ class ReviewAgent:
         }
         self.state_store.update_session(session_id, session_patch)
         return AgentResponse("\n".join(lines), data)
+
+    def _search_local_files(self, patterns: list[str], *, max_results: int = 20) -> AgentResponse:
+        clean_patterns = [pattern for pattern in patterns if pattern]
+        if not clean_patterns:
+            return AgentResponse(
+                _format_error_message("全文搜索缺少关键词", "没有识别到要搜索的旧路径或关键词。"),
+                {"intent": "file_search", "missing": "patterns"},
+            )
+        roots = self._file_search_roots()
+        matches: list[JsonDict] = []
+        searched_files = 0
+        for root in roots:
+            if not root.exists():
+                continue
+            for path in root.rglob("*"):
+                if len(matches) >= max_results:
+                    break
+                if not path.is_file() or not _is_searchable_file(path):
+                    continue
+                searched_files += 1
+                try:
+                    text = path.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                lines = text.splitlines()
+                for line_no, line in enumerate(lines, start=1):
+                    if any(pattern in line for pattern in clean_patterns):
+                        matches.append(
+                            {
+                                "path": str(path),
+                                "line": line_no,
+                                "text": _shorten(line.strip(), 180),
+                            }
+                        )
+                        break
+                if len(matches) >= max_results:
+                    break
+        lines = ["全文搜索结果", "", "搜索条件："]
+        lines.extend(f"- {pattern}" for pattern in clean_patterns)
+        lines.append("")
+        lines.append("搜索范围：")
+        lines.extend(f"- {root}" for root in roots)
+        lines.append("")
+        lines.append("匹配结果：")
+        if matches:
+            for index, item in enumerate(matches, start=1):
+                lines.append(f"{index}. {item['path']}:{item['line']}")
+                lines.append(f"   - {item['text']}")
+        else:
+            lines.append("- 未找到匹配。")
+        lines.append("")
+        lines.append(f"说明：已扫描约 {searched_files} 个文本文件，最多返回 {max_results} 条。")
+        return AgentResponse(
+            "\n".join(lines),
+            {"intent": "file_search", "patterns": clean_patterns, "roots": [str(root) for root in roots], "matches": matches},
+        )
+
+    def _file_search_roots(self) -> list[Path]:
+        roots: list[Path] = []
+        for path in (self.oppo_config_path, self.packaging_config_path):
+            if path:
+                roots.append(path.parent)
+        project_dir = self.packaging_agent.settings.project_dir
+        if project_dir:
+            roots.append(project_dir)
+        deduped: list[Path] = []
+        for root in roots:
+            resolved = Path(root).resolve()
+            if resolved not in deduped:
+                deduped.append(resolved)
+        return deduped
 
     def _packaging_packlist_snapshot(self) -> Path | None:
         configured = self.packaging_agent.settings.packlist_scan_file
@@ -3490,6 +3703,8 @@ def _looks_like_structured_reply(text: Any) -> bool:
     }
     if first_line in known_titles:
         return True
+    if first_line.startswith(("处理结果：", "说明：", "结果：")):
+        return True
     section_markers = (
         "\n\n说明：",
         "\n\n结果：",
@@ -3538,6 +3753,47 @@ def _format_tool_summary_reply(summary: Any) -> str:
     if "\n" in text:
         return "\n".join(["处理结果", "", text])
     return "\n".join(["处理结果", "", "说明：", f"- {_shorten(text, 1000)}"])
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _looks_like_last_packaging_page_request(text: Any) -> bool:
+    clean = str(text or "")
+    return "最后" in clean or "末尾" in clean
+
+
+def _is_searchable_file(path: Path) -> bool:
+    if any(part in {"node_modules", ".git", ".gradle", "build", ".venv", "__pycache__"} for part in path.parts):
+        return False
+    if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".apk", ".zip", ".jar", ".so", ".dex", ".class"}:
+        return False
+    return path.suffix.lower() in {
+        ".json",
+        ".txt",
+        ".md",
+        ".py",
+        ".js",
+        ".ts",
+        ".java",
+        ".kt",
+        ".gradle",
+        ".properties",
+        ".xml",
+        ".yml",
+        ".yaml",
+        ".bat",
+        ".ps1",
+        ".sh",
+        ".cfg",
+        ".ini",
+    }
 
 
 def _format_error_message(title: str, reason: Any, next_steps: list[str] | None = None) -> str:

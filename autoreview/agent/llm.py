@@ -356,6 +356,8 @@ ToolCall JSON 协议：
 - 用户要修改配置时用 stage_config_update，只能暂存；把类似 submission.version_code=10002 的内容放到 config_assignment，把 JSON 修改放到 json_patch。
 - 用户要修改打包脚本 package.js 路径时，用 stage_config_update，并把 config_assignment 写成 packaging.script=完整路径；不要使用 package_script_path。
 - 用户问“在哪个文件改打包脚本路径”，回答应指向 config/packaging.json 的 packaging.script 字段。
+- 用户要求“全文搜索/在项目里搜索/查旧路径/搜索 development_sercer/package.js 残留”时，用 file_search。
+- 不要编造工具参数。package_apk 不支持 use_staged_config；配置修改需要先 stage_config_update，再 confirm_config_update 保存后重新打包。
 - 用户明确确认保存暂存配置时用 confirm_config_update；用户取消/放弃配置修改时用 cancel_config_update。
 - 用户要把最近上传的 APK、图标、截图、版权证明、ICP 证明绑定到配置时，用 bind_material，并把材料类型放到 material_label。
 - 用户发来审核不通过/驳回原因文本并要求分析时，用 analyze_rejection，驳回正文放到 reason。

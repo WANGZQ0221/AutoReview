@@ -284,56 +284,18 @@
         "review_state": "rejected"
       },
       "sender_id": "ou_11fbfc60bac4f4500d9792efc60aec0f",
-      "updated_at": 1781265552,
+      "updated_at": 1781801004,
       "last_market_search": {
-        "query": "单词",
+        "query": "抖音",
         "apps": [
           {
-            "store": "apple_app_store",
-            "app_id": "698570469",
-            "name": "不背单词-四六级考研等英语单词学习",
-            "developer": "Beijing Is-Cool Technology Co., Ltd",
-            "package_name": "cn.com.langeasy.LangEasyLexis",
-            "category": "Education",
-            "url": "https://apps.apple.com/cn/app/%E4%B8%8D%E8%83%8C%E5%8D%95%E8%AF%8D-%E5%9B%9B%E5%85%AD%E7%BA%A7%E8%80%83%E7%A0%94%E7%AD%89%E8%8B%B1%E8%AF%AD%E5%8D%95%E8%AF%8D%E5%AD%A6%E4%B9%A0/id698570469?uo=4",
-            "rating": 4.84525,
-            "rating_count": 423076,
-            "downloads": null,
-            "downloads_text": "",
-            "rank": 1,
-            "raw_metrics": {
-              "download_metric": "not_public",
-              "country": "cn"
-            }
-          },
-          {
-            "store": "oppo_app_market",
-            "app_id": "30032006",
-            "name": "阳阳魔法英语总动员：单词王国",
-            "developer": "",
-            "package_name": "com.xuexue.ai.english.android",
-            "category": "",
-            "url": "softmarket://market_appdetail?pn=com.oppo.market&gb=1&params=enter_id%3D15%26out_package_name%3Dcom.xuexue.ai.english.android%26out_start_download%3Dfalse%26enter_params%3Dout_operator",
-            "rating": 4.92278,
-            "rating_count": 259,
-            "downloads": 300000,
-            "downloads_text": "30 万次",
-            "rank": 1,
-            "raw_metrics": {
-              "download_metric": "public_oppo_download_desc",
-              "download_url": "https://istore.oppomobile.com/download/v1/25459551",
-              "version_id": 25459551,
-              "size": "379 MB"
-            }
-          },
-          {
             "store": "xiaomi_app_store",
-            "app_id": "不背单词-真实语境记单词",
-            "name": "不背单词-真实语境记单词",
+            "app_id": "抖音",
+            "name": "抖音",
             "developer": "",
             "package_name": "",
             "category": "",
-            "url": "https://app.mi.com/search?keywords=%E4%B8%8D%E8%83%8C%E5%8D%95%E8%AF%8D-%E7%9C%9F%E5%AE%9E%E8%AF%AD%E5%A2%83%E8%AE%B0%E5%8D%95%E8%AF%8D",
+            "url": "https://app.mi.com/search?keywords=%E6%8A%96%E9%9F%B3",
             "rating": null,
             "rating_count": null,
             "downloads": null,
@@ -341,146 +303,544 @@
             "rank": 1,
             "raw_metrics": {
               "download_metric": "public_xiaomi_search_suggestion"
-            }
-          },
-          {
-            "store": "apple_app_store",
-            "app_id": "557545298",
-            "name": "百词斩-学外语、背单词必备",
-            "developer": "Chengdu Chaoaixuexi Technology Co, Ltd",
-            "package_name": "com.chaoui.jiongji100CN",
-            "category": "Education",
-            "url": "https://apps.apple.com/cn/app/%E7%99%BE%E8%AF%8D%E6%96%A9-%E5%AD%A6%E5%A4%96%E8%AF%AD-%E8%83%8C%E5%8D%95%E8%AF%8D%E5%BF%85%E5%A4%87/id557545298?uo=4",
-            "rating": 4.82341,
-            "rating_count": 1712109,
-            "downloads": null,
-            "downloads_text": "",
-            "rank": 2,
-            "raw_metrics": {
-              "download_metric": "not_public",
-              "country": "cn"
-            }
-          },
-          {
-            "store": "xiaomi_app_store",
-            "app_id": "单词鸭-消消乐背单词&导入单词",
-            "name": "单词鸭-消消乐背单词&导入单词",
-            "developer": "",
-            "package_name": "",
-            "category": "",
-            "url": "https://app.mi.com/search?keywords=%E5%8D%95%E8%AF%8D%E9%B8%AD-%E6%B6%88%E6%B6%88%E4%B9%90%E8%83%8C%E5%8D%95%E8%AF%8D%26%E5%AF%BC%E5%85%A5%E5%8D%95%E8%AF%8D",
-            "rating": null,
-            "rating_count": null,
-            "downloads": null,
-            "downloads_text": "",
-            "rank": 2,
-            "raw_metrics": {
-              "download_metric": "public_xiaomi_search_suggestion"
-            }
-          },
-          {
-            "store": "apple_app_store",
-            "app_id": "888483369",
-            "name": "墨墨背单词 | 四六级考研等英语词汇记忆",
-            "developer": "MaiMemo Inc.",
-            "package_name": "com.maimemo.ios.momo",
-            "category": "Education",
-            "url": "https://apps.apple.com/cn/app/%E5%A2%A8%E5%A2%A8%E8%83%8C%E5%8D%95%E8%AF%8D-%E5%9B%9B%E5%85%AD%E7%BA%A7%E8%80%83%E7%A0%94%E7%AD%89%E8%8B%B1%E8%AF%AD%E8%AF%8D%E6%B1%87%E8%AE%B0%E5%BF%86/id888483369?uo=4",
-            "rating": 4.85154,
-            "rating_count": 955565,
-            "downloads": null,
-            "downloads_text": "",
-            "rank": 3,
-            "raw_metrics": {
-              "download_metric": "not_public",
-              "country": "cn"
-            }
-          },
-          {
-            "store": "xiaomi_app_store",
-            "app_id": "单词拼读王",
-            "name": "单词拼读王",
-            "developer": "",
-            "package_name": "",
-            "category": "",
-            "url": "https://app.mi.com/search?keywords=%E5%8D%95%E8%AF%8D%E6%8B%BC%E8%AF%BB%E7%8E%8B",
-            "rating": null,
-            "rating_count": null,
-            "downloads": null,
-            "downloads_text": "",
-            "rank": 3,
-            "raw_metrics": {
-              "download_metric": "public_xiaomi_search_suggestion"
-            }
-          },
-          {
-            "store": "apple_app_store",
-            "app_id": "698013609",
-            "name": "扇贝单词英语版-四六级背单词、考研单词必备",
-            "developer": "Nanjing Beiwan Information & Tech Ltd.",
-            "package_name": "com.beeblio.sentence",
-            "category": "Education",
-            "url": "https://apps.apple.com/cn/app/%E6%89%87%E8%B4%9D%E5%8D%95%E8%AF%8D%E8%8B%B1%E8%AF%AD%E7%89%88-%E5%9B%9B%E5%85%AD%E7%BA%A7%E8%83%8C%E5%8D%95%E8%AF%8D-%E8%80%83%E7%A0%94%E5%8D%95%E8%AF%8D%E5%BF%85%E5%A4%87/id698013609?uo=4",
-            "rating": 4.81579,
-            "rating_count": 281911,
-            "downloads": null,
-            "downloads_text": "",
-            "rank": 4,
-            "raw_metrics": {
-              "download_metric": "not_public",
-              "country": "cn"
             }
           }
         ],
-        "errors": [
-          "google_play: 超时"
-        ],
+        "errors": [],
         "store_statuses": [
-          {
-            "store": "apple_app_store",
-            "status": "ok",
-            "result_count": 7,
-            "message": ""
-          },
-          {
-            "store": "google_play",
-            "status": "failed",
-            "result_count": 0,
-            "message": "超时"
-          },
-          {
-            "store": "oppo_app_market",
-            "status": "ok",
-            "result_count": 1,
-            "message": ""
-          },
           {
             "store": "xiaomi_app_store",
             "status": "ok",
             "result_count": 5,
             "message": ""
-          },
-          {
-            "store": "vivo_app_store",
-            "status": "skipped",
-            "result_count": 0,
-            "message": "公开搜索入口不可用，已跳过"
-          },
-          {
-            "store": "huawei_appgallery",
-            "status": "skipped",
-            "result_count": 0,
-            "message": "公开页面为 SPA 壳，静态请求未包含搜索结果"
-          },
-          {
-            "store": "honor_app_market",
-            "status": "skipped",
-            "result_count": 0,
-            "message": "公开搜索入口不可用，已跳过"
           }
         ]
+      },
+      "agent_memory": [
+        "package.js 路径为 D:\\AutoReview\\package.js"
+      ],
+      "long_term_memory": {
+        "notes": [
+          "package.js 路径为 D:\\AutoReview\\package.js"
+        ],
+        "app_info": {
+          "app_name": "小学四年级英语",
+          "pkg_name": "com.pelbs.book43",
+          "version_code": "32"
+        },
+        "submission": {},
+        "preferences": {}
+      },
+      "last_market_filtered_names": {
+        "exact_match": true,
+        "exclude_terms": [],
+        "include_terms": [],
+        "dropped_names": [
+          "抖音极速版",
+          "抖音商城-下单返金币、退货包运费",
+          "抖音精选",
+          "抖音火山版"
+        ]
+      },
+      "conversation_history": [
+        {
+          "ts": 1781779617,
+          "sender_id": "ou_11fbfc60bac4f4500d9792efc60aec0f",
+          "user": "你现在搜索一下OPPO应用商店，看下抖音这个APP的下载量是多少",
+          "assistant": "在OPPO应用商店搜索“抖音”时，未找到与“抖音”APP的精确匹配结果，排除了“抖音极速版”和“抖音火山版”。因此，无法提供抖音APP的具体下载量信息。",
+          "intent": "market_search"
+        },
+        {
+          "ts": 1781779861,
+          "sender_id": "ou_11fbfc60bac4f4500d9792efc60aec0f",
+          "user": "你不用封装的工具，自己去查一下oppo应用商店试一下。",
+          "assistant": "我无法直接访问应用商店进行查询，但可以帮你使用工具查询OPPO应用商店相关信息。",
+          "intent": "chat"
+        },
+        {
+          "ts": 1781780011,
+          "sender_id": "ou_11fbfc60bac4f4500d9792efc60aec0f",
+          "user": "搜索一些其他应用商店。",
+          "assistant": "请提供具体的应用名称或关键词，例如“搜索竞品：英语四级单词”，以便我帮您在其他应用商店进行搜索。",
+          "intent": "market_search"
+        },
+        {
+          "ts": 1781780033,
+          "sender_id": "ou_11fbfc60bac4f4500d9792efc60aec0f",
+          "user": "之前发给过你",
+          "assistant": "请您具体说明需要我帮您做什么，比如查询哪个应用的下载量或打包哪个应用。",
+          "intent": "chat"
+        },
+        {
+          "ts": 1781780134,
+          "sender_id": "ou_11fbfc60bac4f4500d9792efc60aec0f",
+          "user": "你有上下文记忆吗？",
+          "assistant": "我有当前会话的上下文记忆，可以记住您之前提供的应用信息和对话内容，但不具备长期跨会话记忆。",
+          "intent": "chat"
+        },
+        {
+          "ts": 1781780157,
+          "sender_id": "ou_11fbfc60bac4f4500d9792efc60aec0f",
+          "user": "我之前发给你的信息是什么？",
+          "assistant": "您之前发给我的信息是关于应用“小学四年级英语”，包名是com.pelbs.book43，版本号32。",
+          "intent": "chat"
+        }
+      ],
+      "last_turn_at": 1781801004,
+      "last_package_lookup": {
+        "query": "语文",
+        "matches": [
+          {
+            "sheet": "CfgGameConfig",
+            "row": 41,
+            "channel": "xm1034",
+            "app_name": "小学一年级语文上册",
+            "pkg_name": "com.pelbs.book1034",
+            "version_code": "68",
+            "version_name": "3.1034.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 42,
+            "channel": "xm1035",
+            "app_name": "一年级语文下册",
+            "pkg_name": "com.pelbs.book1035",
+            "version_code": "68",
+            "version_name": "3.1035.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 43,
+            "channel": "xm1036",
+            "app_name": "小学二年级语文上册",
+            "pkg_name": "com.pelbs.book1036",
+            "version_code": "68",
+            "version_name": "3.1036.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 44,
+            "channel": "xm1037",
+            "app_name": "二年级语文下册",
+            "pkg_name": "com.pelbs.book1037",
+            "version_code": "68",
+            "version_name": "3.1037.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 45,
+            "channel": "xm1038",
+            "app_name": "三年级语文上册",
+            "pkg_name": "com.pelbs.book1038",
+            "version_code": "68",
+            "version_name": "3.1038.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 46,
+            "channel": "xm1039",
+            "app_name": "三年级语文下册",
+            "pkg_name": "com.pelbs.book1039",
+            "version_code": "68",
+            "version_name": "3.1039.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 47,
+            "channel": "xm1040",
+            "app_name": "四年级语文上册",
+            "pkg_name": "com.pelbs.book1040",
+            "version_code": "68",
+            "version_name": "3.1040.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 48,
+            "channel": "xm1041",
+            "app_name": "四年级语文下册",
+            "pkg_name": "com.pelbs.book1041",
+            "version_code": "68",
+            "version_name": "3.1041.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 49,
+            "channel": "xm1042",
+            "app_name": "五年级语文上册",
+            "pkg_name": "com.pelbs.book1042",
+            "version_code": "68",
+            "version_name": "3.1042.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 50,
+            "channel": "xm1043",
+            "app_name": "小学五年级语文下册智趣",
+            "pkg_name": "com.pelbs.book1043",
+            "version_code": "68",
+            "version_name": "3.1043.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 51,
+            "channel": "xm1044",
+            "app_name": "六年级语文上册",
+            "pkg_name": "com.pelbs.book1044",
+            "version_code": "68",
+            "version_name": "3.1044.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 52,
+            "channel": "xm1045",
+            "app_name": "六年级语文下册",
+            "pkg_name": "com.pelbs.book1045",
+            "version_code": "68",
+            "version_name": "3.1045.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 53,
+            "channel": "xm1064",
+            "app_name": "七年级语文上册",
+            "pkg_name": "com.pelbs.book1064",
+            "version_code": "68",
+            "version_name": "3.1064.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 54,
+            "channel": "xm1065",
+            "app_name": "初中七年级语文下册",
+            "pkg_name": "com.pelbs.book1065",
+            "version_code": "68",
+            "version_name": "3.1065.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 55,
+            "channel": "xm1066",
+            "app_name": "八年级语文上册",
+            "pkg_name": "com.pelbs.book1066",
+            "version_code": "68",
+            "version_name": "3.1066.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 56,
+            "channel": "xm1067",
+            "app_name": "八年级语文下册",
+            "pkg_name": "com.pelbs.book1067",
+            "version_code": "68",
+            "version_name": "3.1067.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 57,
+            "channel": "xm1068",
+            "app_name": "九年级语文上册",
+            "pkg_name": "com.pelbs.book1068",
+            "version_code": "68",
+            "version_name": "3.1068.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 58,
+            "channel": "xm1069",
+            "app_name": "九年级语文下册",
+            "pkg_name": "com.pelbs.book1069",
+            "version_code": "68",
+            "version_name": "3.1069.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 59,
+            "channel": "xm1076",
+            "app_name": "小学语文同步",
+            "pkg_name": "com.pelbs.book1076",
+            "version_code": "68",
+            "version_name": "3.1076.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 62,
+            "channel": "xm1079",
+            "app_name": "初中语文同步",
+            "pkg_name": "com.pelbs.book1079",
+            "version_code": "68",
+            "version_name": "3.1079.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 65,
+            "channel": "xm1082",
+            "app_name": "高中语文同步",
+            "pkg_name": "com.pelbs.book1082",
+            "version_code": "68",
+            "version_name": "3.1082.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 115,
+            "channel": "xm1120",
+            "app_name": "小学语文",
+            "pkg_name": "com.pelbs.book1120",
+            "version_code": "68",
+            "version_name": "3.1120.34.5"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 118,
+            "channel": "xm1123",
+            "app_name": "初中语文",
+            "pkg_name": "com.pelbs.book1123",
+            "version_code": "68",
+            "version_name": "3.1123.34.5"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 135,
+            "channel": "xm11076",
+            "app_name": "小学语文同步",
+            "pkg_name": "zqdd.pelbs.book1076",
+            "version_code": "68",
+            "version_name": "3.11076.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 138,
+            "channel": "xm1140",
+            "app_name": "一年级语文点读",
+            "pkg_name": "com.pelbs.book1140",
+            "version_code": "68",
+            "version_name": "3.1140.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 139,
+            "channel": "xm1141",
+            "app_name": "小学语文二年级",
+            "pkg_name": "com.pelbs.book1141",
+            "version_code": "68",
+            "version_name": "3.1141.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 140,
+            "channel": "xm1142",
+            "app_name": "小学语文三年级",
+            "pkg_name": "com.pelbs.book1142",
+            "version_code": "68",
+            "version_name": "3.1142.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 141,
+            "channel": "xm1143",
+            "app_name": "小学语文四年级",
+            "pkg_name": "com.pelbs.book1143",
+            "version_code": "68",
+            "version_name": "3.1143.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 142,
+            "channel": "xm1144",
+            "app_name": "小学语文五年级",
+            "pkg_name": "com.pelbs.book1144",
+            "version_code": "68",
+            "version_name": "3.1144.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 143,
+            "channel": "xm1145",
+            "app_name": "小学语文六年级",
+            "pkg_name": "com.pelbs.book1145",
+            "version_code": "68",
+            "version_name": "3.1145.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 144,
+            "channel": "xm11079",
+            "app_name": "初中语文同步",
+            "pkg_name": "zqdd.pelbs.book1079",
+            "version_code": "68",
+            "version_name": "3.11079.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 159,
+            "channel": "xm11045",
+            "app_name": "六年级语文下册",
+            "pkg_name": "com.pelbs.book11045",
+            "version_code": "68",
+            "version_name": "3.11045.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 160,
+            "channel": "xm11043",
+            "app_name": "五年级语文下册",
+            "pkg_name": "com.pelbs.book11043",
+            "version_code": "68",
+            "version_name": "3.11043.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 161,
+            "channel": "xm11041",
+            "app_name": "四年级语文下册",
+            "pkg_name": "com.pelbs.book11041",
+            "version_code": "68",
+            "version_name": "3.11041.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 162,
+            "channel": "xm11039",
+            "app_name": "三年级语文下册",
+            "pkg_name": "com.pelbs.book11039",
+            "version_code": "68",
+            "version_name": "3.11039.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 164,
+            "channel": "xm11037",
+            "app_name": "二年级语文下册",
+            "pkg_name": "com.pelbs.book11037",
+            "version_code": "68",
+            "version_name": "3.11037.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 165,
+            "channel": "xm11035",
+            "app_name": "一年级语文下册",
+            "pkg_name": "com.pelbs.book11035",
+            "version_code": "68",
+            "version_name": "3.11035.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 166,
+            "channel": "xm11044",
+            "app_name": "六年级语文上册",
+            "pkg_name": "com.pelbs.book11044",
+            "version_code": "68",
+            "version_name": "3.11044.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 167,
+            "channel": "xm11042",
+            "app_name": "五年级语文上册",
+            "pkg_name": "com.pelbs.book11042",
+            "version_code": "68",
+            "version_name": "3.11042.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 168,
+            "channel": "xm11040",
+            "app_name": "四年级语文上册",
+            "pkg_name": "com.pelbs.book11040",
+            "version_code": "68",
+            "version_name": "3.11040.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 169,
+            "channel": "xm11038",
+            "app_name": "三年级语文上册",
+            "pkg_name": "com.pelbs.book11038",
+            "version_code": "68",
+            "version_name": "3.11038.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 170,
+            "channel": "xm11036",
+            "app_name": "二年级语文上册",
+            "pkg_name": "com.pelbs.book11036",
+            "version_code": "68",
+            "version_name": "3.11036.38.2"
+          },
+          {
+            "sheet": "CfgGameConfig",
+            "row": 171,
+            "channel": "xm11034",
+            "app_name": "一年级语文上册",
+            "pkg_name": "com.pelbs.book11034",
+            "version_code": "68",
+            "version_name": "3.11034.38.2"
+          }
+        ],
+        "page_size": 10,
+        "next_offset": 30,
+        "heading": "查到 语文 对应的包："
+      },
+      "last_market_search_request": {
+        "query": "抖音",
+        "source_text": "帮我查一下小米应用市场，抖音的下载量",
+        "exact_match": true,
+        "exclude_terms": [],
+        "include_terms": [],
+        "target_stores": [
+          "xiaomi_app_store"
+        ]
+      },
+      "market_download_snapshots": {
+        "2026-06": {
+          "month": "2026-06",
+          "recorded_at": "2026-06-18T23:28:43",
+          "query": "抖音",
+          "apps": [
+            {
+              "store": "xiaomi_app_store",
+              "app_id": "抖音",
+              "name": "抖音",
+              "developer": "",
+              "package_name": "",
+              "category": "",
+              "url": "https://app.mi.com/search?keywords=%E6%8A%96%E9%9F%B3",
+              "downloads": null,
+              "downloads_text": "",
+              "download_metric": "public_xiaomi_search_suggestion",
+              "rating": null,
+              "rating_count": null
+            }
+          ],
+          "errors": [],
+          "store_statuses": [
+            {
+              "store": "xiaomi_app_store",
+              "status": "ok",
+              "result_count": 5,
+              "message": ""
+            }
+          ]
+        }
+      },
+      "last_trace_at": 1781801004,
+      "pending_config_patch": {},
+      "last_config_update": {
+        "results": [
+          {
+            "config_path": "D:\\AutoReview\\config\\packaging.json",
+            "backup_path": "D:\\AutoReview\\config\\backups\\packaging.20260619-003931.json",
+            "patch": {
+              "packaging.script": "D:\\AutoReview\\package.js"
+            }
+          }
+        ],
+        "patch": {
+          "packaging.script": "D:\\AutoReview\\package.js"
+        }
       }
     }
   },
-  "updated_at": 1781265552
+  "updated_at": 1781801004
 }
