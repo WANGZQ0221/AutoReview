@@ -18,6 +18,16 @@ function Quote-PowerShellArgument([string]$Value) {
     return "'" + $Value.Replace("'", "''") + "'"
 }
 
+function Get-FeishuWsProcesses {
+    $MainPattern = [regex]::Escape($Main)
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -match $MainPattern -and
+            $_.CommandLine -match "\bserve-feishu-ws\b"
+        }
+}
+
 if (-not (Test-Path -LiteralPath $Python)) {
     throw "Python not found: $Python"
 }
@@ -34,6 +44,13 @@ if (Test-Path -LiteralPath $PidFile) {
     }
 }
 
+$ExistingWsProcesses = @(Get-FeishuWsProcesses)
+if ($ExistingWsProcesses.Count -gt 0) {
+    Write-Host "Feishu long-connection is already running. PID(s): $($ExistingWsProcesses.ProcessId -join ', ')"
+    Write-Host "Logs: $StdoutLog"
+    exit 0
+}
+
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PidFile) | Out-Null
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
@@ -47,7 +64,12 @@ $Command = @(
 ) -join [Environment]::NewLine
 $EncodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
 
-Add-Content -LiteralPath $StdoutLog -Value "[$(Get-Date -Format o)] Starting Feishu long-connection..." -Encoding UTF8
+try {
+    Add-Content -LiteralPath $StdoutLog -Value "[$(Get-Date -Format o)] Starting Feishu long-connection..." -Encoding UTF8
+}
+catch {
+    Write-Warning "Could not append startup marker to stdout log: $($_.Exception.Message)"
+}
 
 $Process = Start-Process `
     -FilePath $PowerShellExe `

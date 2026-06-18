@@ -2,6 +2,17 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = $PSScriptRoot
 $PidFile = Join-Path $ProjectRoot "data\feishu_ws.pid"
+$Main = Join-Path $ProjectRoot "main.py"
+
+function Get-FeishuWsProcesses {
+    $MainPattern = [regex]::Escape($Main)
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -match $MainPattern -and
+            $_.CommandLine -match "\bserve-feishu-ws\b"
+        }
+}
 
 function Stop-ProcessTree([int]$ProcessId) {
     $Children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $ProcessId" -ErrorAction SilentlyContinue
@@ -15,26 +26,48 @@ function Stop-ProcessTree([int]$ProcessId) {
     }
 }
 
-if (-not (Test-Path -LiteralPath $PidFile)) {
-    Write-Host "Feishu long-connection is not running: PID file not found."
-    exit 0
+$StoppedPids = New-Object 'System.Collections.Generic.HashSet[int]'
+
+if (Test-Path -LiteralPath $PidFile) {
+    $PidValue = (Get-Content -LiteralPath $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if (-not $PidValue) {
+        Remove-Item -LiteralPath $PidFile -Force
+        Write-Host "Feishu long-connection PID file was empty."
+    }
+    else {
+        $Process = Get-Process -Id $PidValue -ErrorAction SilentlyContinue
+        if (-not $Process) {
+            Remove-Item -LiteralPath $PidFile -Force
+            Write-Host "Feishu long-connection PID file was stale: process $PidValue was not found."
+        }
+        else {
+            Stop-ProcessTree -ProcessId ([int]$PidValue)
+            [void]$StoppedPids.Add([int]$PidValue)
+        }
+    }
+}
+else {
+    Write-Host "Feishu long-connection PID file not found."
 }
 
-$PidValue = (Get-Content -LiteralPath $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
-if (-not $PidValue) {
+$OrphanProcesses = @(Get-FeishuWsProcesses)
+foreach ($Orphan in $OrphanProcesses) {
+    $OrphanPid = [int]$Orphan.ProcessId
+    if ($StoppedPids.Contains($OrphanPid)) {
+        continue
+    }
+    Stop-ProcessTree -ProcessId $OrphanPid
+    [void]$StoppedPids.Add($OrphanPid)
+}
+
+if (Test-Path -LiteralPath $PidFile) {
     Remove-Item -LiteralPath $PidFile -Force
-    Write-Host "Feishu long-connection is not running: PID file was empty."
-    exit 0
 }
 
-$Process = Get-Process -Id $PidValue -ErrorAction SilentlyContinue
-if (-not $Process) {
-    Remove-Item -LiteralPath $PidFile -Force
-    Write-Host "Feishu long-connection is not running: process $PidValue was not found."
-    exit 0
+if ($StoppedPids.Count -eq 0) {
+    Write-Host "Feishu long-connection is not running."
 }
-
-Stop-ProcessTree -ProcessId ([int]$PidValue)
-Remove-Item -LiteralPath $PidFile -Force
-
-Write-Host "Feishu long-connection stopped. PID: $PidValue"
+else {
+    $StoppedPidList = @($StoppedPids) -join ', '
+    Write-Host "Feishu long-connection stopped. PID(s): $StoppedPidList"
+}
