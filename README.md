@@ -650,7 +650,10 @@ cd D:\development_sercer\AutoReview
 下个版本号先改到 10003
 ```
 
-会话记忆保存在 `data/review_agent_state.json` 的 `agent_memory` 中。
+会话记忆分两层保存：
+
+- 结构化会话状态保存在 `data/review_agent_state.json`。
+- 逐轮对话流水按会话拆分保存在 `data/sessions/<session_id>/turns.jsonl`。
 
 飞书配置在 `config/oppo_submission.json`：
 
@@ -677,7 +680,8 @@ cd D:\development_sercer\AutoReview
 - OCR 用于识别审核意见截图。
 - `image2_url` 当前是预留/辅助能力，后续可用于宣传图或图片相关能力。
 - 飞书下载图片/文件需要开放消息资源、图片资源、文件资源读取权限。
-- 会话状态保存在 `data/review_agent_state.json`。
+- 结构化会话状态保存在 `data/review_agent_state.json`。
+- 逐轮对话流水保存在 `data/sessions/<session_id>/turns.jsonl`，用于上下文追问和最近对话回放。
 - 上传到飞书的原始文件会保存到 `data/feishu_uploads/`。
 - `记录竞品下载` 会在会话状态的 `market_download_snapshots` 中按 `YYYY-MM` 保存月度快照。多数商店不公开精确下载量，且公开搜索页结构可能变化；AutoReview 会尽力解析公开可见的下载量文本、评分和评分数，不公开或解析不到的字段会留空。OPPO / vivo 等公开搜索入口不可用时会自动跳过，不再把 404 暴露给飞书用户。
 - 竞品搜索回复会包含“已查询”概况，说明每个商店是返回了多少结果、未解析到匹配结果、公开入口不可用跳过，还是查询超时/失败。

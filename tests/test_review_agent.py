@@ -570,6 +570,47 @@ class ReviewAgentTest(unittest.TestCase):
 
             self.assertEqual(searcher.calls[0]["stores"], {"oppo_app_market"})
 
+    def test_market_followup_reuses_previous_query_for_other_stores(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            searcher = FakeVariantMarketSearcher()
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "market_search",
+                    "confidence": 0.9,
+                    "arguments": {
+                        "query": "抖音",
+                        "exact_match": True,
+                        "exclude_terms": ["极速版", "火山版"],
+                        "target_stores": ["oppo_app_market"],
+                    },
+                }
+            )
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                market_searcher_factory=lambda: searcher,
+                llm_client=llm,
+            )
+
+            agent.handle_message("chat-1", "你现在搜索一下OPPO应用商店，看下抖音这个APP的下载量是多少")
+            response = agent.handle_message("chat-1", "搜索一些其他应用商店。")
+            session = agent.state_store.get_session("chat-1")
+
+            self.assertEqual(searcher.calls[1]["query"], "抖音")
+            self.assertNotIn("oppo_app_market", searcher.calls[1]["stores"])
+            self.assertTrue(session["last_market_search_request"]["exact_match"])
+            self.assertIn("未找到与“抖音”精确匹配", response.text)
+
+    def test_recent_context_question_reports_conversation_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"))
+
+            agent.handle_message("chat-1", "记录应用：小学四年级英语 / com.pelbs.book43 / 32")
+            agent.handle_message("chat-1", "你现在搜索一下OPPO应用商店，看下抖音这个APP的下载量是多少")
+            response = agent.handle_message("chat-1", "我之前发给你的信息是什么？")
+
+            self.assertIn("最近你发给我的内容是", response.text)
+            self.assertIn("抖音", response.text)
+
     def test_llm_tool_call_executes_packaging_and_summarizes_result(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             fake_packaging = FakePackagingAgent()

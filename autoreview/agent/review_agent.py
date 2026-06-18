@@ -100,6 +100,14 @@ class ReviewAgent:
         return response
 
     def _handle_message_logic(self, session_id: str, clean_text: str, sender_id: str | None = None) -> AgentResponse:
+        market_followup = self._handle_market_followup(session_id, clean_text, sender_id=sender_id)
+        if market_followup:
+            return market_followup
+
+        recent_context_response = self._answer_recent_context_question(session_id, clean_text)
+        if recent_context_response:
+            return recent_context_response
+
         tool_response = self._response_from_llm_tool_call(session_id, clean_text, sender_id=sender_id)
         if tool_response:
             return tool_response
@@ -319,6 +327,14 @@ class ReviewAgent:
             {
                 "last_market_search": result.to_dict(),
                 "last_market_filtered_names": filtered_names,
+                "last_market_search_request": {
+                    "query": query,
+                    "source_text": source_text,
+                    "exact_match": filtered_names.get("exact_match", False),
+                    "exclude_terms": filtered_names.get("exclude_terms") or [],
+                    "include_terms": filtered_names.get("include_terms") or [],
+                    "target_stores": _normalize_store_list(target_stores or []),
+                },
                 "sender_id": sender_id,
             },
         )
@@ -367,6 +383,14 @@ class ReviewAgent:
             {
                 "last_market_search": result.to_dict(),
                 "last_market_filtered_names": filtered_names,
+                "last_market_search_request": {
+                    "query": query,
+                    "source_text": source_text,
+                    "exact_match": filtered_names.get("exact_match", False),
+                    "exclude_terms": filtered_names.get("exclude_terms") or [],
+                    "include_terms": filtered_names.get("include_terms") or [],
+                    "target_stores": _normalize_store_list(target_stores or []),
+                },
                 "market_download_snapshots": snapshots,
                 "sender_id": sender_id,
             },
@@ -885,6 +909,98 @@ class ReviewAgent:
             ],
         }
 
+    def _handle_market_followup(
+        self,
+        session_id: str,
+        text: str,
+        sender_id: str | None = None,
+    ) -> AgentResponse | None:
+        if not _looks_like_market_followup(text):
+            return None
+        request = self._last_market_search_request(session_id)
+        query = str(request.get("query") or "").strip()
+        if not query:
+            return None
+        target_stores = _extract_target_market_stores(text)
+        if _looks_like_other_market_stores_request(text):
+            previous_stores = set(_normalize_store_list(request.get("target_stores") or []))
+            if previous_stores:
+                target_stores = [
+                    store
+                    for store, _ in SUPPORTED_MARKET_STORES
+                    if store not in previous_stores and store not in {"qimai_data", "appark_data"}
+                ]
+        if not target_stores:
+            target_stores = _normalize_store_list(request.get("target_stores") or [])
+        if _looks_like_market_download_request(text):
+            return self.record_competitor_downloads(
+                session_id,
+                query,
+                sender_id=sender_id,
+                source_text=str(request.get("source_text") or text),
+                exact_match=bool(request.get("exact_match")),
+                exclude_terms=_normalize_string_list(request.get("exclude_terms") or []),
+                include_terms=_normalize_string_list(request.get("include_terms") or []),
+                target_stores=target_stores,
+            )
+        return self.search_competitors(
+            session_id,
+            query,
+            sender_id=sender_id,
+            source_text=str(request.get("source_text") or text),
+            exact_match=bool(request.get("exact_match")),
+            exclude_terms=_normalize_string_list(request.get("exclude_terms") or []),
+            include_terms=_normalize_string_list(request.get("include_terms") or []),
+            target_stores=target_stores,
+        )
+
+    def _last_market_search_request(self, session_id: str) -> JsonDict:
+        session = self.state_store.get_session(session_id)
+        request = dict(session.get("last_market_search_request") or {})
+        if request.get("query"):
+            return request
+        search = session.get("last_market_search") or {}
+        filtered = session.get("last_market_filtered_names") or {}
+        if not search.get("query"):
+            return {}
+        stores = []
+        for status in search.get("store_statuses") or []:
+            if isinstance(status, dict) and status.get("store"):
+                stores.append(status.get("store"))
+        return {
+            "query": search.get("query"),
+            "source_text": "",
+            "exact_match": filtered.get("exact_match", False),
+            "exclude_terms": filtered.get("exclude_terms") or [],
+            "include_terms": filtered.get("include_terms") or [],
+            "target_stores": _normalize_store_list(stores),
+        }
+
+    def _answer_recent_context_question(self, session_id: str, text: str) -> AgentResponse | None:
+        if not _looks_like_recent_context_question(text):
+            return None
+        session = self.state_store.get_session(session_id)
+        history = [item for item in (session.get("conversation_history") or []) if item.get("user")]
+        if history:
+            recent = history[-3:]
+            lines = ["最近你发给我的内容是："]
+            for item in recent:
+                lines.append(f"- {item.get('user')}")
+            return AgentResponse("\n".join(lines), {"intent": "recent_context", "history": recent})
+        app_info = session.get("app_info") or {}
+        if app_info:
+            return AgentResponse(
+                "当前会话没有可回放的逐轮对话记录；只保留了结构化应用信息："
+                f"{app_info.get('app_name') or '未记录应用名'} / "
+                f"{app_info.get('pkg_name') or '未记录包名'} / "
+                f"{app_info.get('version_code') or '未记录版本号'}。",
+                {"intent": "recent_context", "missing": "conversation_history", "app_info": app_info},
+            )
+        return AgentResponse(
+            "当前会话还没有可回放的上一轮信息。",
+            {"intent": "recent_context", "missing": "conversation_history"},
+        )
+
     def _dispatch_llm_intent(
         self,
         session_id: str,
@@ -1150,22 +1266,19 @@ class ReviewAgent:
     ) -> None:
         session = self.state_store.get_session(session_id)
         history = list(session.get("conversation_history") or [])
-        history.append(
-            {
-                "ts": int(time.time()),
-                "sender_id": sender_id or "",
-                "user": _shorten(user_text, 500),
-                "assistant": _shorten(response.text, 800),
-                "intent": str(response.data.get("intent") or ""),
-            }
-        )
-        self.state_store.update_session(
-            session_id,
-            {
-                "conversation_history": history[-20:],
-                "sender_id": sender_id,
-            },
-        )
+        turn = {
+            "ts": int(time.time()),
+            "sender_id": sender_id or "",
+            "user": _shorten(user_text, 500),
+            "assistant": _shorten(response.text, 800),
+            "intent": str(response.data.get("intent") or ""),
+        }
+        if hasattr(self.state_store, "append_conversation_turn"):
+            self.state_store.append_conversation_turn(session_id, turn, keep_recent=20)
+            self.state_store.update_session(session_id, {"sender_id": sender_id})
+            return
+        history.append(turn)
+        self.state_store.update_session(session_id, {"conversation_history": history[-20:], "sender_id": sender_id})
 
     def _stage_config_patch(
         self,
@@ -2653,6 +2766,30 @@ def _looks_like_exact_app_request(text: Any) -> bool:
             "这个 app",
         )
     )
+
+
+def _looks_like_market_followup(text: Any) -> bool:
+    clean = str(text or "").lower()
+    market_terms = ("应用商店", "应用市场", "软件商店", "商店", "市场", "下载量", "下载数据", "指标")
+    followup_terms = ("其他", "其它", "别的", "换", "再搜", "再查", "继续", "之前", "刚才", "上面", "前面")
+    return any(term in clean for term in market_terms) and any(term in clean for term in followup_terms)
+
+
+def _looks_like_other_market_stores_request(text: Any) -> bool:
+    clean = str(text or "").lower()
+    return any(term in clean for term in ("其他", "其它", "别的", "其余", "剩下"))
+
+
+def _looks_like_market_download_request(text: Any) -> bool:
+    clean = str(text or "").lower()
+    return any(term in clean for term in ("下载量", "下载数据", "下载次数", "指标", "记录", "月报"))
+
+
+def _looks_like_recent_context_question(text: Any) -> bool:
+    clean = str(text or "").lower()
+    context_terms = ("之前", "刚才", "上次", "前面", "上一轮")
+    ask_terms = ("发给你", "给你的", "说了什么", "说的是", "信息是什么", "内容是什么")
+    return any(term in clean for term in context_terms) and any(term in clean for term in ask_terms)
 
 
 def _infer_market_exclude_terms(text: Any) -> list[str]:

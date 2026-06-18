@@ -235,6 +235,7 @@ def _compact_session(session: JsonDict) -> JsonDict:
         "market_store_preferences": session.get("market_store_preferences") or {},
         "last_rejection_analysis": session.get("last_rejection_analysis") or {},
         "last_market_search": session.get("last_market_search") or {},
+        "last_market_search_request": session.get("last_market_search_request") or {},
         "last_package_lookup": session.get("last_package_lookup") or {},
         "pending_config_patch": session.get("pending_config_patch") or {},
         "has_last_upload": bool(session.get("last_upload")),
@@ -314,6 +315,7 @@ _SYSTEM_PROMPT = """你是 AutoReview 的飞书协作 agent，项目目标是自
 - 生成 market_search 或 market_download_snapshot 时，要结合 preferences.market_stores，不要建议查询当前会话已排除的商店。
 - 用户说“查 OPPO 应用商店/只看 OPPO/小米应用商店里”这类一次性限定搜索范围时，不是 market_store_preference；应识别为 market_search 或 market_download_snapshot，并把对应商店放入 target_stores。
 - 用户说“只要抖音APP，不要极速版/火山版/其他的不要”这类话时，不是 market_store_preference。应识别为 market_search 或 market_download_snapshot，并设置 exact_match=true，必要时填 exclude_terms。
+- 用户说“之前发给过你/刚才说了/其他应用商店/换别的商店搜”时，优先参考 recent_conversation、session.conversation_history 和 session.last_market_search_request 里的上一轮关键词、精确匹配、排除词、商店范围，不要退回无关的 app_info。
 - 判断用户意图时参考 recent_conversation 最近 20 条会话和 long_term_memory 结构化长期记忆。
 - 需要长期保留的信息放入 memories 或 preferences；提交所需结构化数据放入 app_info/config_assignment 等对应字段。
 - market_search 只用于“到应用商店里查同类 APP/游戏”。如果用户问“类似七麦/点点数据/蝉大师/Sensor Tower/data.ai 的第三方数据平台、ASO 平台、应用商店统计数据平台”，这是行业资料调研，不是应用商店竞品搜索；识别为 chat，并直接给出简短平台清单或说明需要网页搜索。
@@ -343,6 +345,7 @@ ToolCall JSON 协议：
 - 用户要查应用商店、竞品、下载量时，优先 market_search；要记录本月下载数据时用 market_download_snapshot。
 - 用户明确“只要某某APP本体，不要极速版/火山版/其他版本”时，arguments.exact_match=true，并把不需要的版本名放到 exclude_terms。
 - 用户说“只看 OPPO/小米/华为/荣耀/vivo 应用商店”是一次性范围，放到 target_stores，不要当成长期偏好。
+- 用户说“之前发给过你/刚才说了/其他应用商店/换别的商店搜”时，优先沿用 recent_conversation、session.conversation_history 和 session.last_market_search_request 里的上一轮 market_search 参数，不要改问用户，也不要退回无关的 app_info。
 - 用户要打包单个 APP 用 package_apk；给中文应用名放 app_name，给 com.xxx 放 pkg_name，给 xm1067 放 channels。
 - 用户要查“应用名对应什么包/渠道/版本”用 package_lookup。
 - 用户要批量打包用 batch_package。
