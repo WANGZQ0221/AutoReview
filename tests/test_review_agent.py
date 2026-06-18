@@ -495,8 +495,11 @@ class ReviewAgentTest(unittest.TestCase):
 
             response = agent.handle_message("chat-1", "八年级下册语文对应什么包")
 
-            self.assertIn("com.pelbs.book1067", response.text)
-            self.assertIn("xm1067", response.text)
+            self.assertIn("应用名：八年级语文下册", response.text)
+            self.assertIn("包名：com.pelbs.book1067", response.text)
+            self.assertIn("渠道：xm1067", response.text)
+            self.assertIn("版本号：68", response.text)
+            self.assertIn("版本名：3.1067.38.2", response.text)
 
     def test_package_lookup_prefers_separate_packaging_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -549,6 +552,38 @@ class ReviewAgentTest(unittest.TestCase):
 
             self.assertIn("com.pelbs.book1067", response.text)
             self.assertEqual(agent.packaging_agent.config_path, packaging_config.resolve())
+
+    def test_packaging_capability_question_does_not_return_global_help(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_dir = base / "config"
+            config_dir.mkdir()
+            main_config = config_dir / "oppo_submission.json"
+            packaging_config = config_dir / "packaging.json"
+            project_dir = base / "android-project"
+            project_dir.mkdir()
+            packaging_config.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            main_config.write_text("{}", encoding="utf-8")
+            (base / "package.js").write_text("", encoding="utf-8")
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), oppo_config_path=main_config)
+
+            response = agent.handle_message("chat-1", "能打包那些？")
+
+            self.assertIn("支持打包和查包", response.text)
+            self.assertIn("打包 八年级语文下册", response.text)
+            self.assertNotIn("我可以协助 OPPO 审核提交流程", response.text)
+            self.assertEqual(response.data["capability"], "packaging")
 
     def test_query_oppo_status_remembers_app_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:

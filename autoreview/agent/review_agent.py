@@ -1948,6 +1948,27 @@ class ReviewAgent:
                 },
             )
 
+        if self._looks_like_packaging_scope_question(lowered):
+            project_dir = self.packaging_agent.settings.project_dir
+            snapshot = self._packaging_packlist_snapshot()
+            lines = ["支持打包和查包。"]
+            if project_dir:
+                lines.append(f"- 当前打包项目目录：{project_dir}")
+            else:
+                lines.append("- 当前还没有配置打包项目目录。")
+            if snapshot:
+                lines.append(f"- 当前可用的 packlist 快照：{snapshot}")
+            lines.append("你可以这样用：")
+            lines.append("- 查包：八年级语文下册对应什么包")
+            lines.append("- 打包预演：打包 八年级语文下册 dry-run")
+            lines.append("- 正式打包：打包 八年级语文下册")
+            lines.append("- 按包名打包：打包 com.pelbs.book1067")
+            lines.append("- 批量打包：批量打包 dry-run")
+            return AgentResponse(
+                "\n".join(lines),
+                {"intent": "capability_question", "capability": "packaging", "configured": bool(project_dir or snapshot)},
+            )
+
         if self._contains_any(lowered, ("竞品", "应用商店", "应用市场", "下载量")):
             return AgentResponse(
                 "有竞品搜索能力。可以发送“搜索竞品：关键词”查询同类 APP；发送“记录竞品下载：关键词”会把本月能拿到的公开指标写入当前会话。"
@@ -1971,12 +1992,34 @@ class ReviewAgent:
             term in text for term in ("应用商店", "应用市场", "商店", "市场", "厂家", "厂商", "渠道")
         ):
             return True
+        if ReviewAgent._looks_like_packaging_scope_question(text):
+            return True
         return bool(re.search(r"能不能.*(ocr|image2|识别|搜索|查询|竞品|下载量)", text, flags=re.IGNORECASE))
 
     @staticmethod
     def _looks_like_market_store_scope_question(text: str) -> bool:
         return any(term in text for term in ("哪些", "那些", "哪几", "多少", "列表", "厂家", "厂商", "渠道")) and any(
             term in text for term in ("应用商店", "应用市场", "商店", "市场", "厂家", "厂商", "渠道")
+        )
+
+    @staticmethod
+    def _looks_like_packaging_scope_question(text: str) -> bool:
+        return any(
+            term in text
+            for term in (
+                "能打包哪些",
+                "能打包那些",
+                "可以打包哪些",
+                "可以打包那些",
+                "能查包哪些",
+                "能查包那些",
+                "支持打包哪些",
+                "支持打包那些",
+                "支持查包哪些",
+                "支持查包那些",
+                "打包哪些",
+                "打包那些",
+            )
         )
 
     def _configured_image_analysis_url(self, key: str) -> str:
@@ -2425,9 +2468,14 @@ class ReviewAgent:
             )
         lines = [f"查到 {query} 对应的包："]
         for entry in matches[:8]:
-            lines.append(
-                f"- {entry.app_name} / {entry.pkg_name} / {entry.channel} / "
-                f"{entry.version_code} / {entry.version_name}"
+            lines.extend(
+                [
+                    f"- 应用名：{entry.app_name}",
+                    f"  包名：{entry.pkg_name}",
+                    f"  渠道：{entry.channel}",
+                    f"  版本号：{entry.version_code}",
+                    f"  版本名：{entry.version_name}",
+                ]
             )
         if len(matches) == 1:
             lines.append("如果要直接打包，可以说“打包这个应用”或“打包这个包”。")
