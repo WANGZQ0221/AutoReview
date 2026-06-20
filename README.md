@@ -606,7 +606,12 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ### 大模型兜底对话
 
-飞书 agent 支持接入 OpenAI-compatible 大模型，用于更开放的小需求聊天、意图识别和会话记忆。默认关闭；未配置时仍使用固定指令和本地语义规则。
+飞书 agent 支持接入大模型，用于更开放的小需求聊天、意图识别和会话记忆。默认关闭；未配置时仍使用固定指令和本地语义规则。
+
+当前支持两种 provider：
+
+- `openclaw`：推荐。通过本机 OpenClaw 调用模型，OpenAI 官方账号订阅/登录态由 OpenClaw 自己管理，AutoReview 不保存 `api_key`。
+- `openai_compatible`：兼容旧方式。通过 OpenAI-compatible HTTP API 和 `api_key` 调用。
 
 共享配置在 `config/llm_config.json`，各厂商提交配置通过 `llm_config_path` 复用同一份大模型配置。
 
@@ -616,11 +621,36 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 Copy-Item config\llm_config.example.json config\llm_config.json
 ```
 
-然后编辑 `config/llm_config.json`：
+如果使用 OpenClaw 账号授权，先在机器上完成 OpenClaw 登录/授权，然后编辑 `config/llm_config.json`：
 
 ```json
 {
   "enabled": true,
+  "provider": "openclaw",
+  "model": "gpt-5.5",
+  "timeout_seconds": 60,
+  "temperature": 0.2,
+  "max_tokens": 800,
+  "openclaw": {
+    "command": "openclaw",
+    "args": ["run", "--stdin"],
+    "cwd": ""
+  }
+}
+```
+
+说明：
+
+- AutoReview 会把提示词通过 stdin 交给 `openclaw`，不读取也不保存 OpenAI 账号 token。
+- 如果服务器上的 OpenClaw 命令不是 `openclaw run --stdin`，只需要改 `openclaw.args`。
+- `openclaw.args` 支持 `{model}`、`{max_tokens}`、`{temperature}` 占位符，例如 `["run", "--model", "{model}", "--stdin"]`。
+
+如果继续使用 OpenAI-compatible API，则配置为：
+
+```json
+{
+  "enabled": true,
+  "provider": "openai_compatible",
   "base_url": "https://api.openai.com/v1",
   "api_key": "填写大模型 API Key",
   "model": "gpt-4.1-mini",

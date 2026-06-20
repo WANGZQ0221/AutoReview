@@ -1862,6 +1862,31 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertNotIn("feishu-secret", response.text)
             self.assertNotIn("llm-secret", response.text)
 
+    def test_view_submission_config_shows_openclaw_llm_auth(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = self._write_minimal_config(base)
+            llm_path = base / "config" / "llm_config.json"
+            llm_path.write_text(
+                json.dumps(
+                    {
+                        "enabled": True,
+                        "provider": "openclaw",
+                        "model": "gpt-5.5",
+                        "openclaw": {"command": "openclaw", "args": ["run", "--stdin"]},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), oppo_config_path=config_path)
+
+            response = agent.handle_message("chat-1", "查看提交配置")
+
+            self.assertIn("大模型：gpt-5.5（OpenClaw）", response.text)
+            self.assertIn("OpenClaw 本机账号授权", response.text)
+            self.assertNotIn("大模型密钥：已配置", response.text)
+
     def test_config_update_requires_confirmation_and_backs_up(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)

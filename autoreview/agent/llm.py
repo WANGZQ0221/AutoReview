@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
+import subprocess
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -15,33 +17,58 @@ JsonDict = dict[str, Any]
 @dataclass(frozen=True)
 class LlmConfig:
     enabled: bool = False
+    provider: str = "openai_compatible"
     base_url: str = ""
     api_key: str = ""
     model: str = ""
     timeout_seconds: int = 30
     temperature: float = 0.2
     max_tokens: int = 800
+    openclaw_command: str = "openclaw"
+    openclaw_args: tuple[str, ...] = ("run", "--stdin")
+    openclaw_cwd: str = ""
 
     @classmethod
     def from_mapping(cls, raw: JsonDict | None) -> "LlmConfig":
         data = raw or {}
+        openclaw = data.get("openclaw") if isinstance(data.get("openclaw"), dict) else {}
+        args = openclaw.get("args") or data.get("openclaw_args") or ("run", "--stdin")
+        if isinstance(args, str):
+            args_tuple = tuple(item for item in args.split(" ") if item)
+        else:
+            args_tuple = tuple(str(item) for item in args)
         return cls(
             enabled=bool(data.get("enabled")),
+            provider=str(data.get("provider") or data.get("type") or "openai_compatible").strip().lower(),
             base_url=str(data.get("base_url") or "").rstrip("/"),
             api_key=str(data.get("api_key") or ""),
             model=str(data.get("model") or ""),
             timeout_seconds=int(data.get("timeout_seconds") or 30),
             temperature=float(data.get("temperature") if data.get("temperature") is not None else 0.2),
             max_tokens=int(data.get("max_tokens") or 800),
+            openclaw_command=str(openclaw.get("command") or data.get("openclaw_command") or "openclaw"),
+            openclaw_args=args_tuple,
+            openclaw_cwd=str(openclaw.get("cwd") or data.get("openclaw_cwd") or ""),
         )
 
     @property
     def ready(self) -> bool:
-        return bool(self.enabled and self.base_url and self.api_key and self.model)
+        if not self.enabled:
+            return False
+        if self.provider == "openclaw":
+            return bool(self.openclaw_command)
+        return bool(self.base_url and self.api_key and self.model)
 
 
 class LlmError(RuntimeError):
     pass
+
+
+def build_llm_client(raw_config: JsonDict | None) -> Any:
+    config = LlmConfig.from_mapping(raw_config)
+    if config.provider == "openclaw":
+        return OpenClawLlmClient(config)
+    return OpenAICompatibleLlmClient(config)
 
 
 class OpenAICompatibleLlmClient:
@@ -166,6 +193,100 @@ class OpenAICompatibleLlmClient:
         return data
 
 
+class OpenClawLlmClient:
+    """Command-backed LLM client that relies on OpenClaw's local account auth."""
+
+    def __init__(self, config: LlmConfig):
+        self.config = config
+
+    @property
+    def enabled(self) -> bool:
+        return self.config.ready
+
+    def interpret(self, message: str, session: JsonDict) -> JsonDict:
+        if not self.enabled:
+            return {"intent": "disabled"}
+        prompt = "\n\n".join(
+            [
+                _SYSTEM_PROMPT,
+                "只输出 JSON 对象，不要输出 Markdown。",
+                _build_user_prompt(message, session),
+            ]
+        )
+        content = self._run_openclaw(prompt)
+        parsed = _parse_json_object_from_text(content, error_label="OpenClaw returned non-JSON intent")
+        return parsed
+
+    def choose_tool(self, message: str, session: JsonDict, tools: list[JsonDict]) -> JsonDict:
+        if not self.enabled:
+            return {"tool": "disabled"}
+        prompt = "\n\n".join(
+            [
+                _TOOL_CALL_SYSTEM_PROMPT,
+                "只输出 ToolCall JSON 对象，不要输出 Markdown。",
+                _build_tool_call_prompt(message, session, tools),
+            ]
+        )
+        content = self._run_openclaw(prompt)
+        return _parse_json_object_from_text(content, error_label="OpenClaw returned non-JSON ToolCall")
+
+    def summarize_tool_result(
+        self,
+        message: str,
+        session: JsonDict,
+        tool_call: JsonDict,
+        tool_result: JsonDict,
+    ) -> str:
+        if not self.enabled:
+            return ""
+        prompt = "\n\n".join(
+            [
+                _TOOL_SUMMARY_SYSTEM_PROMPT,
+                "只输出 JSON 对象：{\"reply\":\"最终回复文本\"}，不要输出 Markdown。",
+                _build_tool_summary_prompt(message, session, tool_call, tool_result),
+            ]
+        )
+        content = self._run_openclaw(prompt)
+        parsed = _parse_json_object_from_text(content, error_label="OpenClaw returned non-JSON summary")
+        return str(parsed.get("reply") or "").strip()
+
+    def _run_openclaw(self, prompt: str) -> str:
+        args = [self._expand_arg(item) for item in self.config.openclaw_args]
+        command = [self.config.openclaw_command, *args]
+        try:
+            result = subprocess.run(
+                command,
+                input=prompt,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                cwd=self.config.openclaw_cwd or None,
+                timeout=self.config.timeout_seconds,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise LlmError(f"OpenClaw command not found: {self.config.openclaw_command}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise LlmError(f"OpenClaw timed out after {self.config.timeout_seconds}s") from exc
+        output = (result.stdout or "").strip()
+        stderr = (result.stderr or "").strip()
+        if result.returncode != 0:
+            detail = stderr or output or f"exit code {result.returncode}"
+            raise LlmError(f"OpenClaw failed: {detail[:300]}")
+        if not output:
+            raise LlmError(f"OpenClaw returned empty output{': ' + stderr[:240] if stderr else ''}")
+        return output
+
+    def _expand_arg(self, value: str) -> str:
+        return (
+            str(value)
+            .replace("{model}", self.config.model)
+            .replace("{max_tokens}", str(self.config.max_tokens))
+            .replace("{temperature}", str(self.config.temperature))
+        )
+
+
 def _extract_message_content(response: JsonDict) -> str:
     choices = response.get("choices") or []
     if not choices or not isinstance(choices[0], dict):
@@ -175,6 +296,28 @@ def _extract_message_content(response: JsonDict) -> str:
     if not content:
         raise LlmError("LLM response has empty message content")
     return str(content)
+
+
+def _parse_json_object_from_text(text: str, *, error_label: str) -> JsonDict:
+    clean = str(text or "").strip()
+    if clean.startswith("```"):
+        clean = re.sub(r"^```(?:json)?\s*", "", clean, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"\s*```$", "", clean).strip()
+    try:
+        parsed = json.loads(clean)
+    except json.JSONDecodeError:
+        start = clean.find("{")
+        end = clean.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                parsed = json.loads(clean[start : end + 1])
+            except json.JSONDecodeError as exc:
+                raise LlmError(f"{error_label}: {clean[:160]}") from exc
+        else:
+            raise LlmError(f"{error_label}: {clean[:160]}")
+    if not isinstance(parsed, dict):
+        raise LlmError(f"{error_label}: JSON response must be an object")
+    return parsed
 
 
 def _build_user_prompt(message: str, session: JsonDict) -> str:

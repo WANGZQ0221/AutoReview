@@ -9,7 +9,7 @@ import re
 from typing import Any
 
 from autoreview.agent import ReviewAgent
-from autoreview.agent.llm import LlmConfig, OpenAICompatibleLlmClient
+from autoreview.agent.llm import build_llm_client
 from autoreview.agent.state import JsonStateStore
 
 from .client import FeishuApiError, FeishuClient
@@ -25,7 +25,7 @@ BOT_MENTION_NAMES = ("应用发布agent", "提交助手", "AutoReview", "autorev
 class FeishuWebhookApp:
     def __init__(self, config: FeishuConfig):
         self.config = config
-        llm_client = OpenAICompatibleLlmClient(LlmConfig.from_mapping(config.llm))
+        llm_client = build_llm_client(config.llm)
         self.agent = ReviewAgent(
             JsonStateStore(config.state_path),
             oppo_config_path=config.config_path,

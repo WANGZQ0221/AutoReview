@@ -169,7 +169,7 @@ def format_config_summary(config_path: str | Path) -> str:
         "能力配置：",
         f"- OCR：{image.get('ocr_url') or '未配置'}",
         f"- image2：{image.get('image2_url') or '未启用'}",
-        f"- 大模型：{llm.get('model') or '未启用'}",
+        f"- 大模型：{_llm_summary_text(llm)}",
     ]
     secret_lines = []
     if raw.get("credentials"):
@@ -178,11 +178,23 @@ def format_config_summary(config_path: str | Path) -> str:
         secret_lines.append("- 飞书/OCR 密钥：已配置（不在飞书展示）")
     if llm.get("api_key"):
         secret_lines.append("- 大模型密钥：已配置（不在飞书展示）")
+    elif llm.get("provider") == "openclaw":
+        secret_lines.append("- 大模型授权：OpenClaw 本机账号授权（不在 AutoReview 配置中保存 key）")
     if secret_lines:
         lines.append("")
         lines.append("密钥状态：")
         lines.extend(secret_lines)
     return "\n".join(lines)
+
+
+def _llm_summary_text(llm: JsonDict) -> str:
+    if not llm or not llm.get("enabled"):
+        return "未启用"
+    provider = str(llm.get("provider") or "openai_compatible")
+    model = str(llm.get("model") or "未指定模型")
+    if provider == "openclaw":
+        return f"{model}（OpenClaw）"
+    return model
 
 
 def _load_summary_llm_config(raw: JsonDict, feishu: JsonDict, config_path: Path) -> JsonDict:
