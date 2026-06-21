@@ -59,6 +59,7 @@ $PowerShellExe = (Get-Process -Id $PID).Path
 $Command = @(
     '$ErrorActionPreference = "Stop"',
     '$env:PYTHONUNBUFFERED = "1"',
+    '$env:OPENCLAW_GATEWAY_TOKEN = "autoreview-local-token"',
     "Set-Location -LiteralPath $(Quote-PowerShellArgument $ProjectRoot)",
     "& $(Quote-PowerShellArgument $Python) $(Quote-PowerShellArgument $Main) -c $(Quote-PowerShellArgument $ConfigPath) serve-feishu-ws --log-level $(Quote-PowerShellArgument $LogLevel) 1>> $(Quote-PowerShellArgument $StdoutLog) 2>> $(Quote-PowerShellArgument $StderrLog)"
 ) -join [Environment]::NewLine
