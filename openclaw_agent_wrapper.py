@@ -25,6 +25,8 @@ def main() -> int:
     if len(prompt) > 12000:
         prompt = prompt[:12000] + " [内容过长，已截断]"
 
+    os.environ.setdefault("OPENCLAW_GATEWAY_TOKEN", "autoreview-local-token")
+
     node = _resolve_node()
     openclaw_mjs = _resolve_openclaw_mjs()
     session_key = f"agent:{args.agent}:autoreview-{os.urandom(8).hex()}"
