@@ -33,7 +33,7 @@ if ($prompt.Length -gt 12000) {
 }
 
 $openclaw = Resolve-OpenClawCommand
-$actualSessionKey = "agent:$Agent:autoreview-" + ([guid]::NewGuid().ToString("N"))
+$actualSessionKey = "agent:${Agent}:autoreview-" + ([guid]::NewGuid().ToString("N"))
 $arguments = @(
     "agent",
     "--agent",
