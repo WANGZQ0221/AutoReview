@@ -10,6 +10,7 @@ import sys
 
 
 def main() -> int:
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser()
     parser.add_argument("--agent", default="main")
     parser.add_argument("--profile", default="autoreview")
@@ -114,3 +115,13 @@ def _extract_assistant_text(output: str) -> str:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _force_utf8_stdio() -> None:
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
