@@ -251,12 +251,13 @@ class OpenClawLlmClient:
         return str(parsed.get("reply") or "").strip()
 
     def _run_openclaw(self, prompt: str) -> str:
-        args = [self._expand_arg(item) for item in self.config.openclaw_args]
+        args = [self._expand_arg(item, prompt=prompt) for item in self.config.openclaw_args]
         command = [self.config.openclaw_command, *args]
+        use_stdin = "{prompt}" not in " ".join(self.config.openclaw_args)
         try:
             result = subprocess.run(
                 command,
-                input=prompt,
+                input=prompt if use_stdin else None,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
@@ -278,9 +279,10 @@ class OpenClawLlmClient:
             raise LlmError(f"OpenClaw returned empty output{': ' + stderr[:240] if stderr else ''}")
         return output
 
-    def _expand_arg(self, value: str) -> str:
+    def _expand_arg(self, value: str, *, prompt: str) -> str:
         return (
             str(value)
+            .replace("{prompt}", prompt)
             .replace("{model}", self.config.model)
             .replace("{max_tokens}", str(self.config.max_tokens))
             .replace("{temperature}", str(self.config.temperature))
@@ -317,6 +319,47 @@ def _parse_json_object_from_text(text: str, *, error_label: str) -> JsonDict:
             raise LlmError(f"{error_label}: {clean[:160]}")
     if not isinstance(parsed, dict):
         raise LlmError(f"{error_label}: JSON response must be an object")
+    parsed = _unwrap_nested_json_object(parsed)
+    if not isinstance(parsed, dict):
+        raise LlmError(f"{error_label}: JSON response must be an object")
+    return parsed
+
+
+def _unwrap_nested_json_object(parsed: JsonDict) -> JsonDict:
+    # Some OpenClaw JSON modes return an outer object whose reply/content field
+    # is itself a JSON string. Unwrap only that narrow case.
+    for key in ("reply", "content", "text", "message", "output"):
+        value = parsed.get(key)
+        nested = _try_parse_json_object(value)
+        if nested is not None:
+            return nested
+    data = parsed.get("data")
+    if isinstance(data, dict):
+        for key in ("reply", "content", "text", "message", "output"):
+            nested = _try_parse_json_object(data.get(key))
+            if nested is not None:
+                return nested
+    result = parsed.get("result")
+    if isinstance(result, dict):
+        for key in ("reply", "content", "text", "message", "output"):
+            nested = _try_parse_json_object(result.get(key))
+            if nested is not None:
+                return nested
+    return parsed
+
+
+def _try_parse_json_object(value: Any) -> JsonDict | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text.startswith("{") or not text.endswith("}"):
+        return None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
     return parsed
 
 

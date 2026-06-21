@@ -633,7 +633,7 @@ Copy-Item config\llm_config.example.json config\llm_config.json
   "max_tokens": 800,
   "openclaw": {
     "command": "openclaw",
-    "args": ["run", "--stdin"],
+    "args": ["agent", "--message", "{prompt}"],
     "cwd": ""
   }
 }
@@ -641,8 +641,8 @@ Copy-Item config\llm_config.example.json config\llm_config.json
 
 说明：
 
-- AutoReview 会把提示词通过 stdin 交给 `openclaw`，不读取也不保存 OpenAI 账号 token。
-- 如果服务器上的 OpenClaw 命令不是 `openclaw run --stdin`，只需要改 `openclaw.args`。
+- AutoReview 会把提示词交给 `openclaw`，不读取也不保存 OpenAI 账号 token。
+- 如果服务器上的 OpenClaw 命令不是 `openclaw agent --message "{prompt}"`，只需要改 `openclaw.args`。
 - `openclaw.args` 支持 `{model}`、`{max_tokens}`、`{temperature}` 占位符，例如 `["run", "--model", "{model}", "--stdin"]`。
 
 如果继续使用 OpenAI-compatible API，则配置为：

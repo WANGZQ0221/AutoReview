@@ -9,7 +9,7 @@
   "max_tokens": 800,
   "openclaw": {
     "command": "openclaw",
-    "args": ["run", "--stdin"],
+    "args": ["agent", "--message", "{prompt}"],
     "cwd": ""
   }
 }

@@ -27,7 +27,7 @@ class LlmClientTest(unittest.TestCase):
 
     def test_openclaw_interpret_uses_command_stdout_json(self):
         completed = subprocess.CompletedProcess(
-            args=["openclaw", "run", "--stdin"],
+            args=["openclaw", "agent", "--message", "hello"],
             returncode=0,
             stdout='{"intent":"chat","confidence":0.9,"reply":"ok"}',
             stderr="",
@@ -37,7 +37,7 @@ class LlmClientTest(unittest.TestCase):
                 "enabled": True,
                 "provider": "openclaw",
                 "model": "gpt-5.5",
-                "openclaw": {"command": "openclaw", "args": ["run", "--stdin"]},
+                "openclaw": {"command": "openclaw", "args": ["agent", "--message", "{prompt}"]},
             }
         )
         client = OpenClawLlmClient(config)
@@ -46,12 +46,13 @@ class LlmClientTest(unittest.TestCase):
             result = client.interpret("你好", {"session": {}})
 
         self.assertEqual(result["intent"], "chat")
-        self.assertIn("只输出 JSON 对象", run.call_args.kwargs["input"])
-        self.assertEqual(run.call_args.args[0], ["openclaw", "run", "--stdin"])
+        self.assertIsNone(run.call_args.kwargs["input"])
+        self.assertEqual(run.call_args.args[0][:3], ["openclaw", "agent", "--message"])
+        self.assertIn("你好", run.call_args.args[0][3])
 
     def test_openclaw_args_expand_model_placeholder(self):
         completed = subprocess.CompletedProcess(
-            args=["openclaw", "run", "--model", "gpt-5.5", "--stdin"],
+            args=["openclaw", "agent", "--message", "帮助"],
             returncode=0,
             stdout='{"tool":"none","confidence":0.9}',
             stderr="",
@@ -61,7 +62,7 @@ class LlmClientTest(unittest.TestCase):
                 "enabled": True,
                 "provider": "openclaw",
                 "model": "gpt-5.5",
-                "openclaw": {"command": "openclaw", "args": ["run", "--model", "{model}", "--stdin"]},
+                "openclaw": {"command": "openclaw", "args": ["agent", "--message", "{prompt}"]},
             }
         )
         client = OpenClawLlmClient(config)
@@ -70,7 +71,30 @@ class LlmClientTest(unittest.TestCase):
             result = client.choose_tool("帮助", {"session": {}}, [])
 
         self.assertEqual(result["tool"], "none")
-        self.assertEqual(run.call_args.args[0], ["openclaw", "run", "--model", "gpt-5.5", "--stdin"])
+        self.assertEqual(run.call_args.args[0][:3], ["openclaw", "agent", "--message"])
+        self.assertIn("帮助", run.call_args.args[0][3])
+
+    def test_openclaw_json_wrapper_reply_is_unwrapped(self):
+        completed = subprocess.CompletedProcess(
+            args=["openclaw", "agent", "--json", "--message", "帮助"],
+            returncode=0,
+            stdout='{"reply":"{\\"tool\\":\\"none\\",\\"confidence\\":0.9}"}',
+            stderr="",
+        )
+        config = LlmConfig.from_mapping(
+            {
+                "enabled": True,
+                "provider": "openclaw",
+                "model": "gpt-5.5",
+                "openclaw": {"command": "openclaw", "args": ["agent", "--json", "--message", "{prompt}"]},
+            }
+        )
+        client = OpenClawLlmClient(config)
+
+        with patch("autoreview.agent.llm.subprocess.run", return_value=completed):
+            result = client.choose_tool("帮助", {"session": {}}, [])
+
+        self.assertEqual(result["tool"], "none")
 
 
 if __name__ == "__main__":
