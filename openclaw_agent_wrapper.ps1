@@ -6,6 +6,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+try {
+    [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+}
+catch {
+    # Windows PowerShell 5.1 may fail in some redirected hosts; keep going.
+}
+
 function Resolve-OpenClawCommand {
     $candidate = Join-Path $env:APPDATA "npm\openclaw.ps1"
     if (Test-Path -LiteralPath $candidate) {
@@ -63,7 +71,7 @@ if (-not $text) {
 }
 
 try {
-    $parsed = $text | ConvertFrom-Json -Depth 100
+    $parsed = $text | ConvertFrom-Json
 }
 catch {
     [Console]::Out.Write($text)
