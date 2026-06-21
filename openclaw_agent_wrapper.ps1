@@ -33,41 +33,18 @@ if ($prompt.Length -gt 12000) {
 }
 
 $openclaw = Resolve-OpenClawCommand
-$powerShellExe = (Get-Process -Id $PID).Path
+$arguments = @(
+    "agent",
+    "--agent",
+    $Agent,
+    "--session-key",
+    $SessionKey,
+    "--message",
+    $prompt,
+    "--json",
+    "--timeout",
+    [string]$Timeout
+)
 
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = $powerShellExe
-$psi.UseShellExecute = $false
-$psi.RedirectStandardOutput = $true
-$psi.RedirectStandardError = $true
-$null = $psi.ArgumentList.Add("-NoProfile")
-$null = $psi.ArgumentList.Add("-ExecutionPolicy")
-$null = $psi.ArgumentList.Add("Bypass")
-$null = $psi.ArgumentList.Add("-File")
-$null = $psi.ArgumentList.Add($openclaw)
-$null = $psi.ArgumentList.Add("agent")
-$null = $psi.ArgumentList.Add("--agent")
-$null = $psi.ArgumentList.Add($Agent)
-$null = $psi.ArgumentList.Add("--session-key")
-$null = $psi.ArgumentList.Add($SessionKey)
-$null = $psi.ArgumentList.Add("--message")
-$null = $psi.ArgumentList.Add($prompt)
-$null = $psi.ArgumentList.Add("--json")
-$null = $psi.ArgumentList.Add("--timeout")
-$null = $psi.ArgumentList.Add([string]$Timeout)
-
-$process = New-Object System.Diagnostics.Process
-$process.StartInfo = $psi
-$null = $process.Start()
-$stdout = $process.StandardOutput.ReadToEnd()
-$stderr = $process.StandardError.ReadToEnd()
-$process.WaitForExit()
-
-if ($stdout) {
-    [Console]::Out.Write($stdout)
-}
-if ($stderr) {
-    [Console]::Error.Write($stderr)
-}
-
-exit $process.ExitCode
+& $openclaw @arguments
+exit $LASTEXITCODE
