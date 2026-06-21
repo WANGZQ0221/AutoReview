@@ -1809,7 +1809,7 @@ class ReviewAgent:
         data = dict(response.data)
         data["tool_call"] = tool_call.to_dict()
         data["tool_result"] = tool_result
-        return AgentResponse(_format_tool_summary_reply(summary) or response.text, data)
+        return AgentResponse(summary or response.text, data)
 
     @staticmethod
     def _normalize_market_tool_call(tool_call: ToolCall, text: str) -> ToolCall:
@@ -1855,6 +1855,9 @@ class ReviewAgent:
                 or ""
             ).strip()
             self._trace_event(session_id, "llm_tool_summary_response", {"reply": summary})
+            if _looks_like_mojibake(summary):
+                self._trace_event(session_id, "llm_tool_summary_mojibake", {"reply": summary})
+                return ""
             return _format_tool_summary_reply(summary)
         except Exception as exc:
             self._trace_event(session_id, "llm_tool_summary_error", {"error": str(exc)})
@@ -3725,6 +3728,8 @@ def _format_llm_free_reply(intent: str, reply: Any) -> str:
     text = str(reply or "").strip()
     if not text:
         return ""
+    if _looks_like_mojibake(text):
+        text = "大模型返回内容编码异常，已忽略这次自由回复。可以直接发送“帮助”或使用具体业务指令。"
     if _looks_like_structured_reply(text):
         return text
     if intent == "remember":
@@ -3748,11 +3753,29 @@ def _format_tool_summary_reply(summary: Any) -> str:
     text = str(summary or "").strip()
     if not text:
         return ""
+    if _looks_like_mojibake(text):
+        return ""
     if _looks_like_structured_reply(text):
         return text
     if "\n" in text:
         return "\n".join(["处理结果", "", text])
     return "\n".join(["处理结果", "", "说明：", f"- {_shorten(text, 1000)}"])
+
+
+def _looks_like_mojibake(text: Any) -> bool:
+    value = str(text or "")
+    if not value:
+        return False
+    replacement_count = value.count("\ufffd") + value.count("�")
+    if replacement_count >= 2:
+        return True
+    suspicious = ("����", "���", "锟斤拷", "鈥", "û����", "������")
+    if any(item in value for item in suspicious):
+        return True
+    asciiish = sum(1 for ch in value if ord(ch) < 128)
+    chinese = sum(1 for ch in value if "\u4e00" <= ch <= "\u9fff")
+    high = sum(1 for ch in value if ord(ch) >= 128)
+    return high >= 12 and chinese == 0 and asciiish < len(value) * 0.5
 
 
 def _optional_int(value: Any) -> int | None:
