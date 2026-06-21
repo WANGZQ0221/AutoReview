@@ -1805,7 +1805,9 @@ class ReviewAgent:
             "data": _json_safe(response.data),
         }
         self._trace_event(session_id, "tool_execute_response", {"tool_call": tool_call.to_dict(), "tool_result": tool_result})
-        summary = self._summarize_tool_response(session_id, text, tool_call, tool_result)
+        summary = ""
+        if not _looks_like_structured_reply(response.text):
+            summary = self._summarize_tool_response(session_id, text, tool_call, tool_result)
         data = dict(response.data)
         data["tool_call"] = tool_call.to_dict()
         data["tool_result"] = tool_result
@@ -2951,7 +2953,8 @@ class ReviewAgent:
         )
 
     def _run_packaging_lookup(self, session_id: str, text: str, decision: JsonDict) -> AgentResponse | None:
-        query = str(decision.get("app_name") or decision.get("query") or self._extract_packaging_lookup_query(text)).strip()
+        explicit_query = str(decision.get("app_name") or decision.get("query") or "").strip()
+        query = explicit_query or self._extract_packaging_lookup_query(text)
         offset = _optional_int(decision.get("offset"))
         page_size = _optional_int(decision.get("page_size"))
         if not query:
@@ -2977,7 +2980,7 @@ class ReviewAgent:
             )
         resolved_page_size = page_size or self._extract_packaging_page_size(text) or 10
         resolved_offset = offset or 0
-        if decision.get("last_page") or _looks_like_last_packaging_page_request(text):
+        if decision.get("last_page") or (not explicit_query and _looks_like_last_packaging_page_request(text)):
             resolved_offset = max(0, len(matches) - resolved_page_size)
         return self._render_packaging_lookup_page(
             session_id,
