@@ -47,5 +47,45 @@ $arguments = @(
     [string]$Timeout
 )
 
-& $openclaw @arguments
-exit $LASTEXITCODE
+$raw = & $openclaw @arguments 2>&1
+$exitCode = $LASTEXITCODE
+
+if ($exitCode -ne 0) {
+    $raw | ForEach-Object { [Console]::Error.WriteLine($_) }
+    exit $exitCode
+}
+
+$text = ($raw | Out-String).Trim()
+if (-not $text) {
+    exit 0
+}
+
+try {
+    $parsed = $text | ConvertFrom-Json -Depth 100
+}
+catch {
+    [Console]::Out.Write($text)
+    exit 0
+}
+
+$finalText = $null
+if ($parsed.result) {
+    if ($parsed.result.finalAssistantVisibleText) {
+        $finalText = [string]$parsed.result.finalAssistantVisibleText
+    }
+    elseif ($parsed.result.finalAssistantRawText) {
+        $finalText = [string]$parsed.result.finalAssistantRawText
+    }
+    elseif ($parsed.result.payloads -and $parsed.result.payloads.Count -gt 0 -and $parsed.result.payloads[0].text) {
+        $finalText = [string]$parsed.result.payloads[0].text
+    }
+}
+
+if ($finalText) {
+    [Console]::Out.Write($finalText)
+}
+else {
+    [Console]::Out.Write($text)
+}
+
+exit 0
