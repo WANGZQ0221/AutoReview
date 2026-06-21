@@ -167,6 +167,13 @@ class ReviewAgent:
         if packaging_catalog:
             return packaging_catalog
 
+        # Packaging lookup/packaging actions are deterministic enough to prefer
+        # local parsing over LLM routing. This avoids mojibake or LLM drift from
+        # corrupting app-name queries like "八年级语文下册对应什么包".
+        packaging_direct = self._handle_packaging_fallback(session_id, clean_text)
+        if packaging_direct:
+            return packaging_direct
+
         tool_response = self._response_from_llm_tool_call(session_id, clean_text, sender_id=sender_id)
         if tool_response:
             return tool_response
@@ -358,10 +365,6 @@ class ReviewAgent:
         semantic_response = self._handle_semantic_intent(session_id, clean_text, sender_id=sender_id)
         if semantic_response:
             return semantic_response
-
-        fallback_package_response = self._handle_packaging_fallback(session_id, clean_text)
-        if fallback_package_response:
-            return fallback_package_response
 
         llm_response = self._response_from_llm_decision(
             session_id,
