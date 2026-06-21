@@ -251,9 +251,11 @@ class OpenClawLlmClient:
         return str(parsed.get("reply") or "").strip()
 
     def _run_openclaw(self, prompt: str) -> str:
-        args = [self._expand_arg(item, prompt=prompt) for item in self.config.openclaw_args]
+        args_template = " ".join(self.config.openclaw_args)
+        prompt_arg = _compact_command_prompt(prompt) if "{prompt}" in args_template else prompt
+        args = [self._expand_arg(item, prompt=prompt_arg) for item in self.config.openclaw_args]
         command = [self.config.openclaw_command, *args]
-        use_stdin = "{prompt}" not in " ".join(self.config.openclaw_args)
+        use_stdin = "{prompt}" not in args_template
         try:
             result = subprocess.run(
                 command,
@@ -361,6 +363,14 @@ def _try_parse_json_object(value: Any) -> JsonDict | None:
     if not isinstance(parsed, dict):
         return None
     return parsed
+
+
+def _compact_command_prompt(prompt: str) -> str:
+    """Keep command-line prompt arguments single-line on Windows."""
+    text = str(prompt or "")
+    if len(text) > 12000:
+        text = text[:12000] + "\n\n[内容过长，已截断]"
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _build_user_prompt(message: str, session: JsonDict) -> str:

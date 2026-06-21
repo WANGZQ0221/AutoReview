@@ -96,6 +96,33 @@ class LlmClientTest(unittest.TestCase):
 
         self.assertEqual(result["tool"], "none")
 
+    def test_openclaw_prompt_argument_is_compacted_to_single_line(self):
+        completed = subprocess.CompletedProcess(
+            args=["openclaw", "agent", "--message", "hello"],
+            returncode=0,
+            stdout='{"tool":"none","confidence":0.9}',
+            stderr="",
+        )
+        config = LlmConfig.from_mapping(
+            {
+                "enabled": True,
+                "provider": "openclaw",
+                "model": "gpt-5.5",
+                "openclaw": {"command": "openclaw", "args": ["agent", "--message", "{prompt}"]},
+            }
+        )
+        client = OpenClawLlmClient(config)
+
+        with patch("autoreview.agent.llm.subprocess.run", return_value=completed) as run:
+            client.choose_tool("第一行\n第二行\t第三行", {"session": {}}, [])
+
+        sent_prompt = run.call_args.args[0][3]
+        self.assertIn("第一行", sent_prompt)
+        self.assertIn("第二行", sent_prompt)
+        self.assertIn("第三行", sent_prompt)
+        self.assertNotIn("\n", sent_prompt)
+        self.assertNotIn("\t", sent_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
