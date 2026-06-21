@@ -112,11 +112,6 @@ def _extract_assistant_text(output: str) -> str:
             return value.strip()
     return output
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-
 def _force_utf8_stdio() -> None:
     for stream in (sys.stdin, sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
@@ -125,3 +120,7 @@ def _force_utf8_stdio() -> None:
                 reconfigure(encoding="utf-8", errors="replace")
             except Exception:
                 pass
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
