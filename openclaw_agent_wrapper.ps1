@@ -7,9 +7,13 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Resolve-OpenClawCommand {
-    $candidate = Join-Path $env:APPDATA "npm\openclaw.cmd"
+    $candidate = Join-Path $env:APPDATA "npm\openclaw.ps1"
     if (Test-Path -LiteralPath $candidate) {
         return $candidate
+    }
+    $command = Get-Command openclaw.ps1 -ErrorAction SilentlyContinue
+    if ($command -and $command.Source) {
+        return $command.Source
     }
     $command = Get-Command openclaw -ErrorAction SilentlyContinue
     if ($command -and $command.Source) {
@@ -29,13 +33,41 @@ if ($prompt.Length -gt 12000) {
 }
 
 $openclaw = Resolve-OpenClawCommand
+$powerShellExe = (Get-Process -Id $PID).Path
 
-& $openclaw `
-    agent `
-    --agent $Agent `
-    --session-key $SessionKey `
-    --message $prompt `
-    --json `
-    --timeout $Timeout
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $powerShellExe
+$psi.UseShellExecute = $false
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$null = $psi.ArgumentList.Add("-NoProfile")
+$null = $psi.ArgumentList.Add("-ExecutionPolicy")
+$null = $psi.ArgumentList.Add("Bypass")
+$null = $psi.ArgumentList.Add("-File")
+$null = $psi.ArgumentList.Add($openclaw)
+$null = $psi.ArgumentList.Add("agent")
+$null = $psi.ArgumentList.Add("--agent")
+$null = $psi.ArgumentList.Add($Agent)
+$null = $psi.ArgumentList.Add("--session-key")
+$null = $psi.ArgumentList.Add($SessionKey)
+$null = $psi.ArgumentList.Add("--message")
+$null = $psi.ArgumentList.Add($prompt)
+$null = $psi.ArgumentList.Add("--json")
+$null = $psi.ArgumentList.Add("--timeout")
+$null = $psi.ArgumentList.Add([string]$Timeout)
 
-exit $LASTEXITCODE
+$process = New-Object System.Diagnostics.Process
+$process.StartInfo = $psi
+$null = $process.Start()
+$stdout = $process.StandardOutput.ReadToEnd()
+$stderr = $process.StandardError.ReadToEnd()
+$process.WaitForExit()
+
+if ($stdout) {
+    [Console]::Out.Write($stdout)
+}
+if ($stderr) {
+    [Console]::Error.Write($stderr)
+}
+
+exit $process.ExitCode
