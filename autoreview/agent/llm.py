@@ -469,6 +469,7 @@ _SYSTEM_PROMPT = """你是 AutoReview 的飞书协作 agent，项目目标是自
 - confirm_config_update：确认保存配置修改。
 - cancel_config_update：取消配置修改。
 - bind_material：绑定最近上传材料。
+- index_materials：扫描本地上架资源并暂存可填充的 submission 材料字段。
 - market_store_preference：调整当前会话的应用商店查询偏好，例如默认不查 Google Play、恢复查询 Google Play。
 - market_search：查询应用商店公开数据，或搜索竞品。
 - market_download_snapshot：记录本月竞品下载数据。
@@ -491,6 +492,7 @@ _SYSTEM_PROMPT = """你是 AutoReview 的飞书协作 agent，项目目标是自
   "channels": ["渠道名，可空"],
   "dry_run": true,
   "material_label": "APK/图标/截图1/版权证明/ICP证明，可空",
+  "materials_root": "上架资源目录，可空",
   "disable_stores": ["要在当前会话排除的商店 id，例如 google_play"],
   "enable_stores": ["要在当前会话恢复查询的商店 id，例如 google_play"],
   "app_info": {"app_name":"","pkg_name":"","version_code":""},
@@ -507,6 +509,7 @@ _SYSTEM_PROMPT = """你是 AutoReview 的飞书协作 agent，项目目标是自
 - 用户要求查询“某应用对应什么包/渠道/版本/包名”时，识别为 package_lookup，并把应用名放到 app_name 或 query。
 - 用户说“这个应用/这个包/刚才那个”时，结合 session.last_package_lookup 判断：如果是打包，识别为 package_apk；如果是询问信息，识别为 package_lookup。
 - 用户要求批量打包时，识别为 batch_package。
+- 用户要求“索引上架资源/查找上架材料/填充上架材料/匹配上架材料”时，识别为 index_materials；给中文应用名放 app_name，给 com.xxx 放 pkg_name；如果消息里有本地目录，放到 materials_root。该动作只暂存配置，不直接保存。
 - 用户要求“默认不查/以后不查/恢复查询某应用商店”时，识别为 market_store_preference，并使用 supported_market_stores 里的 store id。
 - 生成 market_search 或 market_download_snapshot 时，要结合 preferences.market_stores，不要建议查询当前会话已排除的商店。
 - 用户说“查 OPPO 应用商店/只看 OPPO/小米应用商店里”这类一次性限定搜索范围时，不是 market_store_preference；应识别为 market_search 或 market_download_snapshot，并把对应商店放入 target_stores。
@@ -556,6 +559,7 @@ ToolCall JSON 协议：
 - 不要编造工具参数。package_apk 不支持 use_staged_config；配置修改需要先 stage_config_update，再 confirm_config_update 保存后重新打包。
 - 用户明确确认保存暂存配置时用 confirm_config_update；用户取消/放弃配置修改时用 cancel_config_update。
 - 用户要把最近上传的 APK、图标、截图、版权证明、ICP 证明绑定到配置时，用 bind_material，并把材料类型放到 material_label。
+- 用户要求“索引上架资源/查找上架材料/填充上架材料/匹配上架材料”时，用 index_materials；给中文应用名放 app_name，给 com.xxx 放 pkg_name；如果消息里有本地目录，放到 materials_root。该工具只暂存配置，不直接保存。
 - 用户发来审核不通过/驳回原因文本并要求分析时，用 analyze_rejection，驳回正文放到 reason。
 - 用户要求“分析这张图/分析最近图片/用 OCR 内容分析驳回”时，用 analyze_last_image。
 - 用户要整改清单、待办、下一步整改时，用 remediation_checklist。

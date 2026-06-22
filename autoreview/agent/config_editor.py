@@ -32,6 +32,7 @@ SIMPLE_SUBMISSION_FIELDS = {
     "online_type",
     "test_desc",
     "copyright_url",
+    "icp_url",
     "business_username",
     "business_email",
     "business_mobile",
@@ -43,6 +44,7 @@ FILE_REF_FIELDS = {
     "apk_url": {"path", "url", "md5", "cpu_code"},
     "icon_url": {"path"},
     "copyright_url": {"path"},
+    "icp_url": {"path"},
 }
 
 LIST_FILE_REF_FIELDS = {
@@ -63,6 +65,7 @@ PACKAGING_FIELDS = {
     "batch_file",
     "packlist_scan_file",
     "packlist_snapshot",
+    "materials_root",
     "node_command",
     "skip_start",
 }

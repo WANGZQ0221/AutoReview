@@ -28,6 +28,8 @@ from autoreview.packaging.packlist import (
 from autoreview.feishu.long_connection import run_long_connection
 from autoreview.feishu.server import run_server
 from autoreview.agent_app.server import run_agent_app_server
+from autoreview.agent.config_editor import apply_config_patch_to_file
+from autoreview.materials.indexer import MaterialIndexError, suggest_submission_materials
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -213,6 +215,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     resolve_package.add_argument("--pkg-name", required=True, help="Android package name.")
 
+    index_materials = subparsers.add_parser(
+        "index-materials",
+        help="Scan local app-store material folders and suggest submission config fields.",
+    )
+    index_materials.add_argument(
+        "--materials-root",
+        required=True,
+        help="Root folder containing icons, screenshots, licenses, copyright docs, and other release materials.",
+    )
+    index_materials.add_argument("--app-name", help="Application name to match.")
+    index_materials.add_argument("--pkg-name", help="Android package name to match through packlist snapshot.")
+    index_materials.add_argument(
+        "--packlist-snapshot",
+        default="packlist-scan.json",
+        help="Path to scan-packlist JSON snapshot. Defaults to packlist-scan.json.",
+    )
+    index_materials.add_argument(
+        "--max-screenshots",
+        type=int,
+        default=5,
+        help="Maximum screenshots to include in the suggested patch.",
+    )
+    index_materials.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write the suggested patch to --config after creating a backup.",
+    )
+
     material = subparsers.add_parser("material", help="Upload files and update OPPO app materials.")
     material.add_argument(
         "--wait-task",
@@ -316,6 +346,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+        if args.command == "index-materials":
+            output = _run_index_materials(args)
+            print(json.dumps({"ok": True, "result": output}, ensure_ascii=False, indent=2, default=str))
+            return 0
+
         if args.command == "analyze-rejection":
             output = analyze_rejection_reason(_load_reason(args))
             print(json.dumps({"ok": True, "result": output}, ensure_ascii=False, indent=2, default=str))
@@ -356,6 +391,9 @@ def main(argv: list[str] | None = None) -> int:
     except PackageError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
+    except MaterialIndexError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        return 1
 
     print(json.dumps({"ok": True, "result": output}, ensure_ascii=False, indent=2, default=str))
     return 0
@@ -370,6 +408,21 @@ def _config_with_cli_overrides(config: OppoSubmissionConfig, args: argparse.Name
     if getattr(args, "version_name", None):
         overrides["version_name"] = args.version_name
     return apply_submission_overrides(config, overrides, path_base=Path.cwd()) if overrides else config
+
+
+def _run_index_materials(args: argparse.Namespace) -> dict[str, Any]:
+    suggestion = suggest_submission_materials(
+        root=args.materials_root,
+        app_name=args.app_name or "",
+        pkg_name=args.pkg_name or "",
+        packlist_snapshot=args.packlist_snapshot,
+        config_path=args.config,
+        max_screenshots=args.max_screenshots,
+    )
+    output = suggestion.to_dict()
+    if args.apply:
+        output["config_update"] = apply_config_patch_to_file(args.config, suggestion.patch)
+    return output
 
 
 def _run_batch_submit(args: argparse.Namespace, logger) -> list[dict[str, Any]]:

@@ -15,6 +15,7 @@ import uuid
 from typing import Any, Callable
 
 from autoreview.market import AppMarketSearchResult, AppMarketSearcher, build_monthly_snapshot
+from autoreview.materials.indexer import MaterialIndexError, suggest_submission_materials
 from autoreview.packaging.agent import (
     PackagingAgent,
     format_batch_package_result,
@@ -84,6 +85,7 @@ HELP_TEXT = """我可以协助这些场景：
 - “设置提交配置：字段=值”
 - “确认保存配置”
 - 发送文件后说“绑定材料：APK/图标/截图1/版权证明/ICP证明”
+- “索引上架资源：应用名/包名”
 
 8. 图片 OCR / image2
 - 直接发送图片
@@ -173,6 +175,10 @@ class ReviewAgent:
         packaging_direct = self._handle_packaging_fallback(session_id, clean_text)
         if packaging_direct:
             return packaging_direct
+
+        material_index_direct = self._handle_material_index_request(session_id, clean_text, sender_id=sender_id)
+        if material_index_direct:
+            return material_index_direct
 
         tool_response = self._response_from_llm_tool_call(session_id, clean_text, sender_id=sender_id)
         if tool_response:
@@ -762,6 +768,78 @@ class ReviewAgent:
             {"intent": "bind_material", "result": result, "check": check.data},
         )
 
+    def index_submission_materials(
+        self,
+        session_id: str,
+        *,
+        app_name: str = "",
+        pkg_name: str = "",
+        materials_root: str = "",
+        sender_id: str | None = None,
+        source_text: str = "",
+    ) -> AgentResponse:
+        if not self.oppo_config_path:
+            return AgentResponse(
+                _format_error_message("无法索引上架资源", "还没有配置 OPPO 配置文件路径。"),
+                {"intent": "index_materials", "missing": "config_path"},
+            )
+        parsed = self._parse_material_index_request(source_text or app_name or pkg_name)
+        app_name = app_name.strip() or parsed.get("app_name", "")
+        pkg_name = pkg_name.strip() or parsed.get("pkg_name", "")
+        materials_root = materials_root.strip() or parsed.get("materials_root", "") or str(self._materials_root_path() or "")
+        if not app_name and not pkg_name:
+            remembered = self._default_app_info(session_id)
+            app_name = str(remembered.get("app_name") or "")
+            pkg_name = str(remembered.get("pkg_name") or "")
+        if not app_name and not pkg_name:
+            return AgentResponse(
+                _format_error_message(
+                    "索引上架资源缺少应用",
+                    "没有识别到应用名或包名。",
+                    ["请发送“索引上架资源：八年级语文下册”或“索引上架资源：com.pelbs.book1067”。"],
+                ),
+                {"intent": "index_materials", "missing": "query"},
+            )
+        if not materials_root:
+            return AgentResponse(
+                _format_error_message(
+                    "索引上架资源缺少目录",
+                    "还没有配置上架资源目录。",
+                    ["可以在 packaging.materials_root 配置，或发送“索引上架资源：应用名 路径 D:\\\\Workship\\\\Pelbs\\\\AppMaket\\\\上架资源”。"],
+                ),
+                {"intent": "index_materials", "missing": "materials_root"},
+            )
+        try:
+            suggestion = suggest_submission_materials(
+                root=materials_root,
+                app_name=app_name,
+                pkg_name=pkg_name,
+                packlist_snapshot=self._packaging_packlist_snapshot(),
+                config_path=self.oppo_config_path,
+                max_screenshots=5,
+            )
+        except MaterialIndexError as exc:
+            return AgentResponse(
+                _format_error_message("索引上架资源失败", str(exc)),
+                {"intent": "index_materials", "error": str(exc)},
+            )
+        patch = suggestion.patch
+        if not patch:
+            return AgentResponse(
+                _format_error_message(
+                    "未找到可填充材料",
+                    f"没有为“{app_name or pkg_name}”匹配到可写入提交配置的材料。",
+                    ["换一个更完整的应用名或确认上架资源目录是否正确。"],
+                ),
+                {"intent": "index_materials", "suggestion": suggestion.to_dict(), "patch": {}},
+            )
+        staged = self._stage_config_patch(session_id, patch, sender_id=sender_id)
+        session_patch = dict((self.state_store.get_session(session_id).get("pending_config_patch") or {}))
+        return AgentResponse(
+            self._format_material_index_suggestion(suggestion.to_dict(), session_patch),
+            {"intent": "index_materials", "suggestion": suggestion.to_dict(), "patch": session_patch, "staged": staged.data},
+        )
+
     def _handle_semantic_intent(
         self,
         session_id: str,
@@ -1317,6 +1395,14 @@ class ReviewAgent:
         if intent == "bind_material":
             label = str(decision.get("material_label") or self._extract_material_label(text)).strip()
             return self.bind_last_upload_as_material(session_id, label, sender_id=sender_id)
+        if intent == "index_materials":
+            return self.index_submission_materials(
+                session_id,
+                app_name=str(decision.get("app_name") or ""),
+                pkg_name=str(decision.get("pkg_name") or ""),
+                materials_root=str(decision.get("materials_root") or ""),
+                sender_id=sender_id,
+            )
         if intent == "market_store_preference":
             disable = _normalize_store_list(decision.get("disable_stores") or decision.get("disabled_stores"))
             enable = _normalize_store_list(decision.get("enable_stores") or decision.get("enabled_stores"))
@@ -1647,6 +1733,20 @@ class ReviewAgent:
             self._tool_bind_material,
         )
         registry.register(
+            "index_materials",
+            "扫描本地上架资源目录，按应用名或包名匹配材料，并暂存 submission 配置 patch；不会直接写入配置文件。",
+            {
+                "type": "object",
+                "properties": {
+                    "app_name": {"type": "string"},
+                    "pkg_name": {"type": "string"},
+                    "materials_root": {"type": "string"},
+                },
+                "additionalProperties": True,
+            },
+            self._tool_index_materials,
+        )
+        registry.register(
             "analyze_rejection",
             "分析用户提供的应用商店审核驳回原因文本。",
             {
@@ -1937,6 +2037,16 @@ class ReviewAgent:
             sender_id=context.get("sender_id"),
         )
 
+    def _tool_index_materials(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        return self.index_submission_materials(
+            str(context.get("session_id") or ""),
+            app_name=str(call.arguments.get("app_name") or ""),
+            pkg_name=str(call.arguments.get("pkg_name") or ""),
+            materials_root=str(call.arguments.get("materials_root") or ""),
+            sender_id=context.get("sender_id"),
+            source_text=str(context.get("text") or ""),
+        )
+
     def _tool_analyze_rejection(self, call: ToolCall, context: JsonDict) -> AgentResponse:
         reason = str(call.arguments.get("reason") or "").strip()
         if not reason:
@@ -2218,9 +2328,68 @@ class ReviewAgent:
             f"- 打包脚本：{packaging.get('script') or packaging.get('script_path') or '未配置'}",
             f"- 批量清单：{packaging.get('batch_file') or '未配置'}",
             f"- packlist 快照：{packaging.get('packlist_scan_file') or packaging.get('packlist_snapshot') or '未配置'}",
+            f"- 上架资源：{packaging.get('materials_root') or '未配置'}",
             f"- Node：{packaging.get('node_command') or 'node'}",
         ]
         return "\n".join(lines)
+
+    def _format_material_index_suggestion(self, suggestion: JsonDict, patch: JsonDict) -> str:
+        app = suggestion.get("app") or {}
+        candidates = suggestion.get("candidates") or {}
+        lines = ["上架资源索引", ""]
+        if app:
+            lines.append("应用信息：")
+            lines.append(f"- 应用：{app.get('app_name') or suggestion.get('query') or '未识别'}")
+            lines.append(f"- 包名：{app.get('pkg_name') or '未识别'}")
+            lines.append(f"- 版本：{app.get('version_code') or ''} / {app.get('version_name') or ''}")
+            lines.append("")
+        lines.append("已暂存配置：")
+        for key in patch:
+            lines.append(f"- {key} = {_display_patch_value(patch[key])}")
+        lines.append("")
+        lines.append("首选材料：")
+        for key, label in (
+            ("icon", "图标"),
+            ("screenshots", "截图"),
+            ("copyright", "版权/软著"),
+            ("icp", "ICP备案"),
+            ("special", "补充材料"),
+        ):
+            items = candidates.get(key) or []
+            if not items:
+                continue
+            first = items[0]
+            lines.append(f"- {label}：{Path(str(first.get('path') or '')).name}")
+        warnings = suggestion.get("warnings") or []
+        if warnings:
+            lines.append("")
+            lines.append("提醒：")
+            lines.extend(f"- {item}" for item in warnings)
+        lines.append("")
+        lines.append("下一步：")
+        lines.append("- 发送“确认保存配置”写入文件。")
+        lines.append("- 发送“取消保存配置”放弃修改。")
+        return "\n".join(lines)
+
+    def _materials_root_path(self) -> Path | None:
+        configured = self._packaging_setting("materials_root")
+        if configured:
+            path = Path(str(configured))
+            base_dir = self.packaging_config_path.parent if self.packaging_config_path else Path.cwd()
+            return path if path.is_absolute() else base_dir / path
+        default = Path(r"D:\Workship\Pelbs\AppMaket\上架资源")
+        return default if default.exists() else None
+
+    def _packaging_setting(self, key: str) -> Any:
+        config_path = self.packaging_config_path
+        if not config_path or not config_path.exists():
+            return None
+        try:
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        packaging = raw.get("packaging") or {}
+        return packaging.get(key) if isinstance(packaging, dict) else None
 
     def analyze_rejection_text(
         self,
@@ -2931,6 +3100,64 @@ class ReviewAgent:
             ("打包", "构建", "编译apk", "编译 apk", "package-apk", "batch-package", "package apk"),
         )
 
+    def _handle_material_index_request(
+        self,
+        session_id: str,
+        text: str,
+        sender_id: str | None = None,
+    ) -> AgentResponse | None:
+        if not self._looks_like_material_index_request(text):
+            return None
+        parsed = self._parse_material_index_request(text)
+        return self.index_submission_materials(
+            session_id,
+            app_name=parsed.get("app_name", ""),
+            pkg_name=parsed.get("pkg_name", ""),
+            materials_root=parsed.get("materials_root", ""),
+            sender_id=sender_id,
+            source_text=text,
+        )
+
+    def _looks_like_material_index_request(self, text: str) -> bool:
+        return self._contains_any(
+            text,
+            (
+                "索引上架资源",
+                "查找上架资源",
+                "查找上架材料",
+                "索引上架材料",
+                "填充上架材料",
+                "匹配上架材料",
+                "找上架材料",
+                "找上架资源",
+            ),
+        )
+
+    def _parse_material_index_request(self, text: str) -> JsonDict:
+        clean = str(text or "").strip()
+        pkg_match = re.search(r"([A-Za-z][\w]*(?:\.[A-Za-z][\w]*){2,})", clean)
+        path_match = re.search(r"(?:路径|目录|root|materials_root)\s*[:：]?\s*([A-Za-z]:[\\/][^，,。；;]+)", clean, flags=re.IGNORECASE)
+        payload = self._extract_payload(clean)
+        if not payload:
+            payload = re.sub(
+                r"^(帮我|请|麻烦|可以|把|为)?\s*(索引上架资源|查找上架资源|查找上架材料|索引上架材料|填充上架材料|匹配上架材料|找上架材料|找上架资源)\s*",
+                "",
+                clean,
+            )
+        materials_root = path_match.group(1).strip().strip("\"'") if path_match else ""
+        app_name = payload.strip()
+        if pkg_match:
+            app_name = app_name.replace(pkg_match.group(1), "").strip()
+        if materials_root:
+            app_name = app_name.replace(materials_root, "").strip()
+        app_name = re.sub(r"(路径|目录|root|materials_root)\s*[:：]?\s*$", "", app_name, flags=re.IGNORECASE).strip()
+        app_name = re.sub(r"[：:，,。！？?\s]+$", "", app_name).strip()
+        return {
+            "app_name": app_name,
+            "pkg_name": pkg_match.group(1) if pkg_match else "",
+            "materials_root": materials_root,
+        }
+
     def _looks_like_packaging_lookup(self, text: str) -> bool:
         return self._contains_any(
             text,
@@ -3511,6 +3738,11 @@ def _unique_texts(values: list[Any]) -> list[str]:
         if text and text not in result:
             result.append(text)
     return result
+
+
+def _display_patch_value(value: Any) -> str:
+    text = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value)
+    return text if len(text) <= 100 else text[:99] + "..."
 
 
 def _normalize_market_app_name(value: Any) -> str:

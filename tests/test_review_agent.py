@@ -2088,6 +2088,70 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertEqual(raw["submission"]["pic_url"][0]["path"], "../assets/a.png")
             self.assertEqual(raw["submission"]["pic_url"][1]["path"], "../assets/b.png")
 
+    def test_material_index_request_stages_patch_until_confirmed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            materials = base_dir / "materials"
+            app_dir = materials / "语文" / "八年级" / "下册" / "智趣互娱"
+            app_dir.mkdir(parents=True)
+            (app_dir / "八年级语文下册软著.png").write_bytes(b"copyright")
+            (app_dir / "八年级下册语文免责函oppo_01.jpg").write_bytes(b"letter")
+            snapshot = base_dir / "packlist-scan.json"
+            snapshot.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "result": [
+                            {
+                                "sheet": "CfgGameConfig",
+                                "row": 56,
+                                "channel": "xm1067",
+                                "app_name": "八年级语文下册",
+                                "pkg_name": "com.pelbs.book1067",
+                                "version_code": "68",
+                                "version_name": "3.1067.38.2",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            packaging_path = base_dir / "config" / "packaging.json"
+            packaging_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "packlist_scan_file": str(snapshot),
+                            "materials_root": str(materials),
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            agent = ReviewAgent(
+                JsonStateStore(base_dir / "state.json"),
+                oppo_config_path=config_path,
+                packaging_config_path=packaging_path,
+            )
+
+            stage = agent.handle_message("chat-1", "索引上架资源：com.pelbs.book1067")
+            before = json.loads(config_path.read_text(encoding="utf-8"))
+            session = agent.state_store.get_session("chat-1")
+            confirm = agent.handle_message("chat-1", "确认保存配置")
+            after = json.loads(config_path.read_text(encoding="utf-8"))
+
+            self.assertIn("上架资源索引", stage.text)
+            self.assertIn("确认保存配置", stage.text)
+            self.assertEqual(before["submission"]["pkg_name"], "com.example.app")
+            self.assertEqual(session["pending_config_patch"]["submission.pkg_name"], "com.pelbs.book1067")
+            self.assertIn("八年级语文下册软著.png", session["pending_config_patch"]["submission.copyright_url.path"])
+            self.assertEqual(after["submission"]["pkg_name"], "com.pelbs.book1067")
+            self.assertIn("八年级语文下册软著.png", after["submission"]["copyright_url"]["path"])
+            self.assertIn("配置已保存", confirm.text)
+
     def test_bind_last_upload_as_apk_copies_file_and_updates_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)
