@@ -7,6 +7,9 @@ outputs/
 release/
 docs/
 tmp/
+data/sessions/
+data/review_agent_state.json
+data/*.pid
 *.pth
 *.pt
 *.onnx
