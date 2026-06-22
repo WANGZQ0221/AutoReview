@@ -1032,6 +1032,83 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertTrue(fake_packaging.package_one_calls[0]["dry_run"])
             self.assertEqual(response.data["tool_call"]["tool"], "package_apk")
 
+    def test_llm_first_handles_packaging_catalog_question(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            config_path = base / "config.json"
+            project_dir = base / "android-project"
+            project_dir.mkdir()
+            snapshot_path = base / "packlist-scan.json"
+            snapshot_path.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "result": [
+                            {
+                                "sheet": "CfgGameConfig",
+                                "row": 4,
+                                "channel": "xm1000",
+                                "app_name": "一年级英语上册",
+                                "pkg_name": "com.pelbs.book1000",
+                                "version_code": "68",
+                                "version_name": "3.1000.38.2",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(base / "package.js"),
+                            "packlist_scan_file": str(snapshot_path),
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (base / "package.js").write_text("", encoding="utf-8")
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "package_lookup",
+                    "confidence": 0.96,
+                    "arguments": {"query": "全部", "page_size": 10},
+                }
+            )
+            agent = ReviewAgent(JsonStateStore(base / "state.json"), packaging_config_path=config_path, llm_client=llm)
+
+            response = agent.handle_message("chat-1", "可以打包那些？")
+
+            self.assertEqual(response.data["intent"], "package_lookup")
+            self.assertEqual(response.data["tool_call"]["tool"], "package_lookup")
+            self.assertIn("com.pelbs.book1000", response.text)
+
+    def test_llm_first_prevents_time_tracking_request_from_becoming_package_app_name(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_packaging = FakePackagingAgent()
+            llm = FakeLlmClient(
+                {
+                    "intent": "remember",
+                    "confidence": 0.92,
+                    "memories": ["以后每次打包都统计脚本耗时"],
+                    "reply": "以后每次打包我会关注并反馈脚本耗时。",
+                }
+            )
+            agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"), llm_client=llm)
+            agent.packaging_agent = fake_packaging
+
+            response = agent.handle_message("chat-1", "以后统计一下脚本打包时间，能记住吗")
+            session = agent.state_store.get_session("chat-1")
+
+            self.assertEqual(response.data["intent"], "remember")
+            self.assertFalse(fake_packaging.package_one_calls)
+            self.assertIn("统计脚本耗时", session["long_term_memory"]["notes"][0])
+
     def test_full_chain_trace_records_llm_tool_and_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)
@@ -1765,7 +1842,7 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("待保存配置修改", response.text)
             self.assertEqual(raw["submission"]["version_code"], "100")
 
-    def test_llm_is_called_when_rules_match_but_local_command_still_wins(self):
+    def test_hard_rule_status_skips_llm_and_returns_local_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             llm = FakeLlmClient({"intent": "chat", "confidence": 1, "reply": "should not be used"})
             agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"), llm_client=llm)
@@ -1773,7 +1850,8 @@ class ReviewAgentTest(unittest.TestCase):
             response = agent.handle_message("chat-1", "状态")
 
             self.assertIn("当前会话", response.text)
-            self.assertEqual(len(llm.calls), 1)
+            self.assertEqual(len(llm.calls), 0)
+            self.assertEqual(len(llm.tool_calls), 0)
 
     def test_llm_context_includes_default_config_and_preferences(self):
         with tempfile.TemporaryDirectory() as temp_dir:

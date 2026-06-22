@@ -213,6 +213,28 @@ class ReviewAgent:
         return response
 
     def _handle_message_logic(self, session_id: str, clean_text: str, sender_id: str | None = None) -> AgentResponse:
+        hard_rule_response = self._handle_hard_rule(session_id, clean_text, sender_id=sender_id)
+        if hard_rule_response:
+            return hard_rule_response
+
+        tool_response = self._response_from_llm_tool_call(session_id, clean_text, sender_id=sender_id)
+        if tool_response:
+            return tool_response
+
+        llm_decision = self._interpret_with_llm(session_id, clean_text, sender_id=sender_id)
+        llm_response = self._response_from_llm_decision(
+            session_id,
+            clean_text,
+            llm_decision,
+            sender_id=sender_id,
+            allow_chat=True,
+        )
+        if llm_response:
+            return llm_response
+
+        return self._handle_message_with_local_fallback(session_id, clean_text, sender_id=sender_id)
+
+    def _handle_hard_rule(self, session_id: str, clean_text: str, sender_id: str | None = None) -> AgentResponse | None:
         market_followup = self._handle_market_followup(session_id, clean_text, sender_id=sender_id)
         if market_followup:
             return market_followup
@@ -225,51 +247,12 @@ class ReviewAgent:
         if packaging_followup:
             return packaging_followup
 
-        packaging_catalog = self._handle_packaging_catalog_request(session_id, clean_text)
-        if packaging_catalog:
-            return packaging_catalog
-
-        # Packaging lookup/packaging actions are deterministic enough to prefer
-        # local parsing over LLM routing. This avoids mojibake or LLM drift from
-        # corrupting app-name queries like "八年级语文下册对应什么包".
-        packaging_direct = self._handle_packaging_fallback(session_id, clean_text)
-        if packaging_direct:
-            return packaging_direct
-
-        material_index_direct = self._handle_material_index_request(session_id, clean_text, sender_id=sender_id)
-        if material_index_direct:
-            return material_index_direct
-
-        tool_response = self._response_from_llm_tool_call(session_id, clean_text, sender_id=sender_id)
-        if tool_response:
-            return tool_response
-
-        llm_decision = self._interpret_with_llm(session_id, clean_text, sender_id=sender_id)
-        if self._should_apply_llm_before_rules(clean_text):
-            llm_response = self._response_from_llm_decision(
-                session_id,
-                clean_text,
-                llm_decision,
-                sender_id=sender_id,
-                allow_chat=True,
-            )
-            if llm_response:
-                return llm_response
-
         if clean_text in {"帮助", "help", "/help"}:
             return AgentResponse(HELP_TEXT, {"intent": "help"})
 
-        preference_response = self._handle_market_store_preference(session_id, clean_text, sender_id=sender_id)
-        if preference_response:
-            return preference_response
-
-        capability_response = self._answer_capability_question(session_id, clean_text)
-        if capability_response:
-            return capability_response
-
-        research_response = self._handle_app_store_data_platform_research(clean_text)
-        if research_response:
-            return research_response
+        if clean_text in {"状态", "当前状态"}:
+            session = self.state_store.get_session(session_id)
+            return AgentResponse(self._format_session(session), {"intent": "status", "session": session})
 
         if clean_text in {"清空记录", "清空当前记录", "清空当前状态", "重置记录", "重置当前记录", "重置当前会话"}:
             return self.clear_session_state(session_id)
@@ -277,18 +260,11 @@ class ReviewAgent:
         if clean_text in {"清空所有记录", "清空全部记录", "重置所有记录", "重置全部会话"}:
             return self.clear_all_state()
 
-        if clean_text.startswith("分析驳回"):
-            reason = self._extract_payload(clean_text)
-            if not reason:
-                return AgentResponse(
-                    _format_error_message(
-                        "驳回分析缺少原因",
-                        "没有收到 OPPO 驳回原因正文。",
-                        ["请按“分析驳回：<OPPO驳回原因>”发送完整原因。"],
-                    ),
-                    {"intent": "analyze_rejection"},
-                )
-            return self.analyze_rejection_text(session_id, reason, sender_id=sender_id)
+        if clean_text in {"确认保存配置", "保存配置", "确认配置"}:
+            return self.confirm_config_update(session_id, sender_id=sender_id)
+
+        if clean_text in {"取消保存配置", "取消配置修改", "放弃配置修改"}:
+            return self.cancel_config_update(session_id, sender_id=sender_id)
 
         if clean_text in {"分析这张图", "用最近图片分析驳回", "分析最近图片", "分析图片"}:
             session = self.state_store.get_session(session_id)
@@ -303,6 +279,50 @@ class ReviewAgent:
                     {"intent": "analyze_last_image", "missing": "ocr_text"},
                 )
             return self.analyze_rejection_text(session_id, image_text, sender_id=sender_id)
+
+        return None
+
+    def _handle_message_with_local_fallback(
+        self,
+        session_id: str,
+        clean_text: str,
+        sender_id: str | None = None,
+    ) -> AgentResponse:
+        if clean_text in {"帮助", "help", "/help"}:
+            return AgentResponse(HELP_TEXT, {"intent": "help"})
+
+        packaging_catalog = self._handle_packaging_catalog_request(session_id, clean_text)
+        if packaging_catalog:
+            return packaging_catalog
+
+        material_index_direct = self._handle_material_index_request(session_id, clean_text, sender_id=sender_id)
+        if material_index_direct:
+            return material_index_direct
+
+        preference_response = self._handle_market_store_preference(session_id, clean_text, sender_id=sender_id)
+        if preference_response:
+            return preference_response
+
+        capability_response = self._answer_capability_question(session_id, clean_text)
+        if capability_response:
+            return capability_response
+
+        research_response = self._handle_app_store_data_platform_research(clean_text)
+        if research_response:
+            return research_response
+
+        if clean_text.startswith("分析驳回"):
+            reason = self._extract_payload(clean_text)
+            if not reason:
+                return AgentResponse(
+                    _format_error_message(
+                        "驳回分析缺少原因",
+                        "没有收到 OPPO 驳回原因正文。",
+                        ["请按“分析驳回：<OPPO驳回原因>”发送完整原因。"],
+                    ),
+                    {"intent": "analyze_rejection"},
+                )
+            return self.analyze_rejection_text(session_id, reason, sender_id=sender_id)
 
         if clean_text in {"整改清单", "生成整改清单", "待办清单"}:
             return self.build_remediation_checklist(session_id, sender_id=sender_id)
@@ -323,12 +343,6 @@ class ReviewAgent:
                 f"packaging.script={packaging_script_update}",
                 sender_id=sender_id,
             )
-
-        if clean_text in {"确认保存配置", "保存配置", "确认配置"}:
-            return self.confirm_config_update(session_id, sender_id=sender_id)
-
-        if clean_text in {"取消保存配置", "取消配置修改", "放弃配置修改"}:
-            return self.cancel_config_update(session_id, sender_id=sender_id)
 
         config_followup = self._answer_config_followup_question(session_id, clean_text)
         if config_followup:
@@ -431,16 +445,6 @@ class ReviewAgent:
         semantic_response = self._handle_semantic_intent(session_id, clean_text, sender_id=sender_id)
         if semantic_response:
             return semantic_response
-
-        llm_response = self._response_from_llm_decision(
-            session_id,
-            clean_text,
-            llm_decision,
-            sender_id=sender_id,
-            allow_chat=True,
-        )
-        if llm_response:
-            return llm_response
 
         return AgentResponse(
             "我还不确定你要我做什么。发送“帮助”查看可用指令。",
@@ -1971,9 +1975,7 @@ class ReviewAgent:
             "data": _json_safe(response.data),
         }
         self._trace_event(session_id, "tool_execute_response", {"tool_call": tool_call.to_dict(), "tool_result": tool_result})
-        summary = ""
-        if not _looks_like_structured_reply(response.text):
-            summary = self._summarize_tool_response(session_id, text, tool_call, tool_result)
+        summary = self._summarize_tool_response(session_id, text, tool_call, tool_result)
         data = dict(response.data)
         data["tool_call"] = tool_call.to_dict()
         data["tool_result"] = tool_result
@@ -2723,10 +2725,9 @@ class ReviewAgent:
     def _looks_like_project_logic_request(self, text: str) -> bool:
         if self._contains_any(text, ("项目逻辑", "逻辑说明", "整体逻辑", "配置逻辑", "工具总结")):
             return True
-        return self._contains_any(text, ("配置", "记忆", "memory", "skill", "工具调用", "工具判断", "工具")) and self._contains_any(
-            text,
-            ("怎么处理", "怎么判断", "怎么写", "看一下", "帮我看", "说明", "总结", "你的"),
-        )
+        meta_terms = ("记忆", "memory", "skill", "工具调用", "工具判断", "工具怎么", "调用怎么", "路由")
+        ask_terms = ("怎么处理", "怎么判断", "怎么写", "看一下", "帮我看", "说明", "总结", "你的")
+        return self._contains_any(text, meta_terms) and self._contains_any(text, ask_terms)
 
     def _looks_like_clear_session_request(self, text: str) -> bool:
         return self._contains_any(text, ("清空", "清除", "删除", "重置")) and self._contains_any(
@@ -3258,6 +3259,27 @@ class ReviewAgent:
         query = explicit_query or self._extract_packaging_lookup_query(text)
         offset = _optional_int(decision.get("offset"))
         page_size = _optional_int(decision.get("page_size"))
+        if _is_all_packaging_query(query):
+            try:
+                entries = self._all_packaging_entries()
+            except Exception as exc:
+                return AgentResponse(
+                    _format_error_message("读取可打包列表失败", str(exc), ["检查 packaging.project_dir 或 packlist 快照配置。"]),
+                    {"intent": "package_lookup", "error": str(exc)},
+                )
+            if not entries:
+                return AgentResponse(
+                    _format_error_message("没有可用打包包信息", "当前 packlist 里还没有可用的打包包信息。", ["检查 packlist.xls 或 packlist-scan.json。"]),
+                    {"intent": "package_lookup", "matches": []},
+                )
+            return self._render_packaging_lookup_page(
+                session_id,
+                query="全部",
+                matches=[entry.to_dict() for entry in entries],
+                offset=offset or 0,
+                page_size=page_size or self._extract_packaging_page_size(text) or 10,
+                heading=f"当前可打包包列表（共 {len(entries)} 个）：",
+            )
         if not query:
             return AgentResponse(
                 _format_error_message(
@@ -4099,6 +4121,11 @@ def _optional_int(value: Any) -> int | None:
 def _looks_like_last_packaging_page_request(text: Any) -> bool:
     clean = str(text or "")
     return "最后" in clean or "末尾" in clean
+
+
+def _is_all_packaging_query(value: Any) -> bool:
+    clean = re.sub(r"[：:，,。！？?\s]+", "", str(value or ""))
+    return clean in {"全部", "所有", "全量", "列表", "全部包", "所有包", "可打包列表", "packlist列表"}
 
 
 def _is_searchable_file(path: Path) -> bool:

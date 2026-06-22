@@ -1,0 +1,2 @@
+{"ts":1782124998,"sender_id":"ou_918754144e62bdc9ec782ae7367cd8bc","user":"以后打包统计一下脚本运行时间，能记住吗？","assistant":"打包失败  原因： - 未找到应用名对应的渠道：以后打包统计一下脚本运行时间，能记住吗  下一步： - 检查 packaging.project_dir、packaging.script 和 packlist 配置。 - 修正后重新发送打包指令。","intent":"package_apk"}
+{"ts":1782125103,"sender_id":"ou_918754144e62bdc9ec782ae7367cd8bc","user":"不是让你打包","assistant":"打包失败  原因： - 未找到应用名对应的渠道：不是让你打  下一步： - 检查 packaging.project_dir、packaging.script 和 packlist 配置。 - 修正后重新发送打包指令。","intent":"package_apk"}
