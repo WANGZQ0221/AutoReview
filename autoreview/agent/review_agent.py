@@ -91,6 +91,66 @@ HELP_TEXT = """我可以协助这些场景：
 - 直接发送图片
 - “分析最近图片”"""
 
+PROJECT_LOGIC_TEXT = """AutoReview Agent
+处理完成，结果如下。
+
+当前这套项目逻辑主要分四层：
+
+1. 主入口配置
+- `config/oppo_submission.json` 是飞书入口和 OPPO 提交主配置。
+- `config/packaging.json` 是通用打包配置，负责 Android 项目目录、package.js、批量清单和 packlist 快照。
+- `config/llm_config.json` 是共享大模型配置；当前通过 OpenClaw wrapper 调用本机授权。
+- `config/market_data.json` 是应用商店/竞品数据查询配置。
+
+原则：打包配置不塞进 OPPO submission；商店配置只管提交材料、凭证和平台字段。
+
+2. 记忆怎么处理
+- 结构化会话状态保存在 `data/review_agent_state.json`。
+- 最近 20 轮对话保存在 `data/sessions/<session_id>/turns.jsonl`，用于“刚才那个/这个应用/继续”等上下文。
+- 全链路调试 trace 保存在 `data/sessions/<session_id>/trace-YYYY-MM-DD.jsonl`，记录大模型理解、工具选择、工具结果和最终回复。
+- 长期记忆不是大杂烩，分成 notes、app_info、submission、preferences。
+
+常见写入规则：
+- “记录应用：应用名 / 包名 / 版本号”写入当前会话 app_info。
+- “默认不查 Google Play”这类偏好写入当前会话 preferences，不改默认配置。
+- “设置提交配置：字段=值”只暂存 pending_config_patch；必须再发“确认保存配置”才写文件。
+- “记录竞品下载”会按月份写入 market_download_snapshots。
+
+3. 工具调用怎么判断
+优先级是：本地确定性规则 > LLM ToolCall > LLM intent > 本地语义兜底。
+
+- 查包/打包优先走本地解析，避免大模型把“八年级语文下册”改错或乱码。
+- “对应什么包/渠道/版本”走 package_lookup。
+- “打包 xxx dry-run”走 package_apk；dry-run 不会真正打包。
+- “批量打包 dry-run”走 batch_package。
+- “帮我查小米应用市场，抖音下载量”走 market_search；只有明确“记录/月度/保存”才走 market_download_snapshot。
+- “查询审核状态”走 oppo_status。
+- “提交检查/能不能提交”走 submission_check。
+- “查看提交配置”只展示非密钥摘要。
+- “设置提交配置”走 stage_config_update，确认后才写入。
+- “绑定材料：APK/图标/截图1/版权证明/ICP证明”走 bind_material。
+- “分析驳回/分析最近图片/整改清单”分别走驳回分析、图片 OCR 上下文和整改清单。
+
+安全边界：
+- 大模型只输出结构化意图或 ToolCall，不直接改文件、不提交审核、不上传材料。
+- 密钥字段不在飞书展示，也不允许通过飞书修改。
+- 正式提交、上传、撤回这类高风险动作不靠自由聊天触发。
+
+4. skill/能力说明怎么写
+当前 AutoReview 没有单独的 OpenClaw `skills/*.md` 目录；能力说明主要写在三处：
+- `HELP_TEXT`：飞书“帮助/工具总结/有哪些 skill”展示给用户。
+- `llm.py` 里的 system prompt：告诉大模型可用 intent、字段、边界和安全规则。
+- `ToolRegistry`：每个本地工具的 name、description、input_schema、handler。
+
+如果后续要做成真正的 skill 文件，建议拆成路由型结构：
+- `SKILL.md`：只写触发条件、第一反应、路由边界。
+- `references/config-boundary.md`：配置文件职责边界。
+- `references/memory.md`：会话状态、长期记忆、trace 规则。
+- `references/tools.md`：工具选择矩阵。
+- `references/safety.md`：密钥、提交、写文件边界。
+
+一句话总结：AutoReview 不是让大模型直接干活，而是让它把自然语言变成安全、可审计的本地工具调用；真正执行都在 Python 工具层。"""
+
 
 @dataclass
 class AgentResponse:
@@ -847,6 +907,9 @@ class ReviewAgent:
         sender_id: str | None = None,
     ) -> AgentResponse | None:
         lowered = text.lower()
+
+        if self._looks_like_project_logic_request(lowered):
+            return AgentResponse(PROJECT_LOGIC_TEXT, {"intent": "project_logic", "semantic": True})
 
         if self._looks_like_help_request(lowered):
             return AgentResponse(HELP_TEXT, {"intent": "help", "semantic": True})
@@ -2656,6 +2719,14 @@ class ReviewAgent:
 
     def _looks_like_help_request(self, text: str) -> bool:
         return self._contains_any(text, ("帮助", "怎么用", "如何使用", "能做什么", "指令", "命令", "使用说明"))
+
+    def _looks_like_project_logic_request(self, text: str) -> bool:
+        if self._contains_any(text, ("项目逻辑", "逻辑说明", "整体逻辑", "配置逻辑", "工具总结")):
+            return True
+        return self._contains_any(text, ("配置", "记忆", "memory", "skill", "工具调用", "工具判断", "工具")) and self._contains_any(
+            text,
+            ("怎么处理", "怎么判断", "怎么写", "看一下", "帮我看", "说明", "总结", "你的"),
+        )
 
     def _looks_like_clear_session_request(self, text: str) -> bool:
         return self._contains_any(text, ("清空", "清除", "删除", "重置")) and self._contains_any(

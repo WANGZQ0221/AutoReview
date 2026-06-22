@@ -1887,6 +1887,21 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("OpenClaw 本机账号授权", response.text)
             self.assertNotIn("大模型密钥：已配置", response.text)
 
+    def test_project_logic_question_explains_config_memory_tools_and_skills(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = ReviewAgent(JsonStateStore(Path(temp_dir) / "state.json"))
+
+            response = agent.handle_message(
+                "chat-1",
+                "帮我看一下你的配置，记忆怎么处理的？各工具调用是怎么判断的？skill是怎么写的。",
+            )
+
+            self.assertEqual(response.data["intent"], "project_logic")
+            self.assertIn("主入口配置", response.text)
+            self.assertIn("记忆怎么处理", response.text)
+            self.assertIn("工具调用怎么判断", response.text)
+            self.assertIn("skill/能力说明怎么写", response.text)
+
     def test_config_update_requires_confirmation_and_backs_up(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)

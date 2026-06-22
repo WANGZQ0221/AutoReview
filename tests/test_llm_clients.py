@@ -123,6 +123,57 @@ class LlmClientTest(unittest.TestCase):
         self.assertNotIn("\n", sent_prompt)
         self.assertNotIn("\t", sent_prompt)
 
+    def test_interpret_prompt_contains_layered_autoreview_rules(self):
+        completed = subprocess.CompletedProcess(
+            args=["openclaw", "agent", "--message", "hello"],
+            returncode=0,
+            stdout='{"intent":"chat","confidence":0.9,"reply":"ok"}',
+            stderr="",
+        )
+        config = LlmConfig.from_mapping(
+            {
+                "enabled": True,
+                "provider": "openclaw",
+                "openclaw": {"command": "openclaw", "args": ["agent", "--message", "{prompt}"]},
+            }
+        )
+        client = OpenClawLlmClient(config)
+
+        with patch("autoreview.agent.llm.subprocess.run", return_value=completed) as run:
+            client.interpret("帮我看一下你的配置，记忆怎么处理的？", {"session": {}})
+
+        sent_prompt = run.call_args.args[0][3]
+        self.assertIn("工作方式", sent_prompt)
+        self.assertIn("配置边界", sent_prompt)
+        self.assertIn("记忆归属", sent_prompt)
+        self.assertIn("config/packaging.json", sent_prompt)
+        self.assertIn("不要假装存在外部 OpenClaw skill 文件", sent_prompt)
+
+    def test_tool_prompt_treats_config_memory_skill_questions_as_no_tool(self):
+        completed = subprocess.CompletedProcess(
+            args=["openclaw", "agent", "--message", "hello"],
+            returncode=0,
+            stdout='{"tool":"none","confidence":0.9}',
+            stderr="",
+        )
+        config = LlmConfig.from_mapping(
+            {
+                "enabled": True,
+                "provider": "openclaw",
+                "openclaw": {"command": "openclaw", "args": ["agent", "--message", "{prompt}"]},
+            }
+        )
+        client = OpenClawLlmClient(config)
+
+        with patch("autoreview.agent.llm.subprocess.run", return_value=completed) as run:
+            client.choose_tool("各工具调用是怎么判断的？skill是怎么写的。", {"session": {}}, [])
+
+        sent_prompt = run.call_args.args[0][3]
+        self.assertIn("调度原则", sent_prompt)
+        self.assertIn("问记忆机制", sent_prompt)
+        self.assertIn("不要选择 view_submission_config", sent_prompt)
+        self.assertIn("记忆写入边界", sent_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
