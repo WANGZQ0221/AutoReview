@@ -330,6 +330,14 @@ def _parse_json_object_from_text(text: str, *, error_label: str) -> JsonDict:
 def _unwrap_nested_json_object(parsed: JsonDict) -> JsonDict:
     # Some OpenClaw JSON modes return an outer object whose reply/content field
     # is itself a JSON string. Unwrap only that narrow case.
+    payloads = parsed.get("payloads")
+    if isinstance(payloads, list):
+        for item in payloads:
+            if not isinstance(item, dict):
+                continue
+            nested = _try_parse_json_object(item.get("text"))
+            if nested is not None:
+                return nested
     for key in ("reply", "content", "text", "message", "output"):
         value = parsed.get(key)
         nested = _try_parse_json_object(value)

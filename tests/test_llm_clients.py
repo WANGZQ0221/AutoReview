@@ -96,6 +96,33 @@ class LlmClientTest(unittest.TestCase):
 
         self.assertEqual(result["tool"], "none")
 
+    def test_openclaw_payload_text_wrapper_is_unwrapped(self):
+        completed = subprocess.CompletedProcess(
+            args=["openclaw", "agent", "--message", "帮助"],
+            returncode=0,
+            stdout=(
+                '{"payloads":[{"text":"{\\"intent\\":\\"chat\\",'
+                '\\"confidence\\":0.92,\\"reply\\":\\"可以统计耗时\\"}",'
+                '"mediaUrl":null}],"meta":{"provider":"openai"}}'
+            ),
+            stderr="",
+        )
+        config = LlmConfig.from_mapping(
+            {
+                "enabled": True,
+                "provider": "openclaw",
+                "model": "gpt-5.5",
+                "openclaw": {"command": "openclaw", "args": ["agent", "--message", "{prompt}"]},
+            }
+        )
+        client = OpenClawLlmClient(config)
+
+        with patch("autoreview.agent.llm.subprocess.run", return_value=completed):
+            result = client.interpret("可以统计打包运行时间吗？", {"session": {}})
+
+        self.assertEqual(result["intent"], "chat")
+        self.assertEqual(result["reply"], "可以统计耗时")
+
     def test_openclaw_prompt_argument_is_compacted_to_single_line(self):
         completed = subprocess.CompletedProcess(
             args=["openclaw", "agent", "--message", "hello"],
