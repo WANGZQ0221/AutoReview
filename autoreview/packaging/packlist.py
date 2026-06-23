@@ -22,6 +22,7 @@ class PacklistEntry:
     pkg_name: str
     version_code: str
     version_name: str
+    res_path: str = ""
 
     def to_dict(self) -> dict[str, str | int]:
         return asdict(self)
@@ -108,6 +109,7 @@ def _entry_from_mapping(item: dict[str, Any]) -> PacklistEntry:
         pkg_name=str(item.get("pkg_name") or ""),
         version_code=str(item.get("version_code") or ""),
         version_name=str(item.get("version_name") or ""),
+        res_path=str(item.get("res_path") or ""),
     )
 
 
@@ -200,6 +202,7 @@ def _rows_to_entries(rows: list[dict[str, Any]]) -> list[PacklistEntry]:
                 pkg_name=pkg_name,
                 version_code=_cell(cells, 7),
                 version_name=_cell(cells, 10),
+                res_path=_cell(cells, 6),
             )
         )
     return entries

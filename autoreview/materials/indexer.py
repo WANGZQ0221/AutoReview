@@ -92,6 +92,9 @@ def suggest_submission_materials(
         aliases.update(_material_aliases(app.pkg_name))
         aliases.update(_material_aliases(app.channel))
 
+    res_path = app.res_path if app else ""
+    res_files = _iter_resource_files(Path(res_path)) if res_path and Path(res_path).is_dir() else []
+
     candidates = {
         "icon": _rank_candidates(files, aliases, "icon"),
         "screenshots": _rank_candidates(files, aliases, "screenshots"),
@@ -100,6 +103,10 @@ def suggest_submission_materials(
         "special": _rank_candidates(files, aliases, "special"),
         "promo": _rank_candidates(files, aliases, "promo"),
     }
+
+    if res_files:
+        _merge_res_path_candidates(candidates, res_files, aliases, res_path)
+
     selected = _select_candidates(candidates, max_screenshots=max_screenshots)
     patch = _build_patch(app, selected, config_path=config_path)
     warnings = _warnings_for_selection(selected)
@@ -172,6 +179,42 @@ def _rank_candidates(
         if score > 0:
             ranked.append(MaterialCandidate(kind=kind, path=str(path), score=score, reason=reason))
     return sorted(ranked, key=lambda item: (-item.score, _path_sort_key(item.path)))[:20]
+
+
+def _merge_res_path_candidates(
+    candidates: dict[str, list[MaterialCandidate]],
+    res_files: list[Path],
+    aliases: set[str],
+    res_path: str,
+) -> None:
+    res_normalized = _normalize_text(res_path)
+    icon_files = [f for f in res_files if f.suffix.lower() in IMAGE_EXTENSIONS]
+    if icon_files:
+        for f in icon_files:
+            name = _normalize_text(f.name)
+            if any(h in name for h in ICON_HINTS) or any(h in res_normalized for h in ("icon", "icons")):
+                candidate = MaterialCandidate(
+                    kind="icon", path=str(f), score=200, reason="packlist res_path icon",
+                )
+                existing = candidates["icon"]
+                if not any(c.path == candidate.path for c in existing):
+                    existing.insert(0, candidate)
+                break
+
+    parent = Path(res_path).parent
+    sibling_files = [f for f in parent.rglob("*") if f.is_file() and f.suffix.lower() in RESOURCE_EXTENSIONS]
+    for kind, hints in (("screenshots", SCREENSHOT_HINTS), ("copyright", COPYRIGHT_HINTS), ("special", SPECIAL_HINTS)):
+        for f in sibling_files:
+            text = _normalize_text(str(f))
+            if any(_normalize_text(h) in text for h in hints):
+                alias_hits = [a for a in aliases if a and a in text]
+                if alias_hits:
+                    candidate = MaterialCandidate(
+                        kind=kind, path=str(f), score=150, reason="packlist res_path sibling",
+                    )
+                    existing = candidates[kind]
+                    if not any(c.path == candidate.path for c in existing):
+                        existing.insert(0, candidate)
 
 
 def _score_path(path: Path, aliases: set[str], kind: str) -> tuple[int, str]:
