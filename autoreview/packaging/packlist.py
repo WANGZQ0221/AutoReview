@@ -96,6 +96,24 @@ def require_single_package_channel(project_dir: str | Path, pkg_name: str) -> Pa
     return matches[0]
 
 
+def resolve_packlist_channel(project_dir: str | Path, channel: str) -> list[PacklistEntry]:
+    wanted = channel.strip()
+    if not wanted:
+        raise PackageError("channel must not be empty")
+    return resolve_packlist_channel_entries(scan_packlist(project_dir), channel)
+
+
+def resolve_packlist_channel_entries(entries: list[PacklistEntry], channel: str) -> list[PacklistEntry]:
+    wanted = channel.strip()
+    if not wanted:
+        raise PackageError("channel must not be empty")
+    normalized = wanted.lower()
+    strict = [entry for entry in entries if entry.channel.lower() == normalized]
+    if strict:
+        return strict
+    return [entry for entry in entries if normalized in entry.channel.lower()]
+
+
 def packlist_entries_to_dicts(entries: list[PacklistEntry]) -> list[dict[str, Any]]:
     return [entry.to_dict() for entry in entries]
 

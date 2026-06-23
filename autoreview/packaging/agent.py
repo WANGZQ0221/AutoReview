@@ -107,6 +107,47 @@ class PackagingAgent:
                     raise
         return results
 
+    def package_batch_by_app_names(
+        self,
+        app_names: list[str],
+        *,
+        dry_run: bool = False,
+        continue_on_error: bool = True,
+    ) -> list[JsonDict]:
+        project_dir = self._require_project_dir()
+        script_path = self._require_script_path()
+        groups: list[tuple[str, list[PacklistEntry]]] = []
+        for app_name in app_names:
+            matches = resolve_packlist_app_name(project_dir, app_name)
+            if not matches:
+                raise PackageError(f"未找到应用名对应的渠道：{app_name}")
+            groups.append((app_name, matches))
+
+        results: list[JsonDict] = []
+        for app_name, entries in groups:
+            channels = [entry.channel for entry in entries]
+            job = make_package_job(
+                project_dir=project_dir,
+                channels=channels,
+                script_path=script_path,
+                node_command=self.settings.node_command,
+                skip_start=self.settings.skip_start,
+                name=app_name,
+            )
+            try:
+                self.logger(f"Packaging {app_name}: {' '.join(channels)}")
+                result = run_package_job(job, dry_run=dry_run, logger=self.logger)
+                result["latest_apks"] = [str(path) for path in find_latest_apks(project_dir)]
+                if len(entries) == 1:
+                    result["resolved_package"] = entries[0].to_dict()
+                results.append({"ok": True, **result})
+            except PackageError as exc:
+                entry = {"ok": False, "name": app_name, "error": str(exc)}
+                results.append(entry)
+                if not continue_on_error:
+                    raise
+        return results
+
     def _load_settings(self) -> PackagingSettings:
         if not self.config_path or not self.config_path.exists():
             return PackagingSettings()

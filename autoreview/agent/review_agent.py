@@ -23,8 +23,8 @@ from autoreview.packaging.agent import (
     parse_package_request,
 )
 from autoreview.packaging.packlist import (
-    resolve_packlist_app_name,
     resolve_packlist_app_name_entries,
+    resolve_packlist_channel_entries,
     scan_packlist,
     scan_packlist_snapshot,
 )
@@ -1868,10 +1868,17 @@ class ReviewAgent:
         )
         registry.register(
             "batch_package",
-            "按配置文件批量打包 APK。支持 dry_run。",
+            "按配置文件批量打包 APK，或按指定应用名批量打包。支持 dry_run。",
             {
                 "type": "object",
-                "properties": {"dry_run": {"type": "boolean"}},
+                "properties": {
+                    "dry_run": {"type": "boolean"},
+                    "app_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要打包的应用名列表，如 ['三年级英语上册', '三年级英语下册']。提供时按应用名打包，不提供时按配置文件批量打包。",
+                    },
+                },
                 "additionalProperties": True,
             },
             self._tool_batch_package,
@@ -2176,10 +2183,15 @@ class ReviewAgent:
         )
 
     def _tool_batch_package(self, call: ToolCall, context: JsonDict) -> AgentResponse | None:
+        app_names = _normalize_string_list(call.arguments.get("app_names") or [])
         return self._run_packaging_intent(
             str(context.get("session_id") or ""),
             str(context.get("text") or ""),
-            {"intent": "batch_package", "dry_run": bool(call.arguments.get("dry_run"))},
+            {
+                "intent": "batch_package",
+                "dry_run": bool(call.arguments.get("dry_run")),
+                "app_names": app_names,
+            },
         )
 
     def _tool_file_search(self, call: ToolCall, context: JsonDict) -> AgentResponse:
@@ -3143,9 +3155,15 @@ class ReviewAgent:
     def _run_packaging_intent(self, session_id: str, text: str, decision: JsonDict) -> AgentResponse | None:
         parsed = parse_package_request(text)
         dry_run = bool(decision.get("dry_run")) or bool(parsed.get("dry_run"))
+        app_names = _normalize_string_list(decision.get("app_names") or [])
         try:
             if decision.get("intent") == "batch_package" or parsed.get("batch"):
-                result = self.packaging_agent.package_batch(dry_run=dry_run, continue_on_error=True)
+                if app_names:
+                    result = self.packaging_agent.package_batch_by_app_names(
+                        app_names, dry_run=dry_run, continue_on_error=True,
+                    )
+                else:
+                    result = self.packaging_agent.package_batch(dry_run=dry_run, continue_on_error=True)
                 return AgentResponse(
                     format_batch_package_result(result, dry_run=dry_run),
                     {"intent": "batch_package", "result": result, "dry_run": dry_run},
@@ -3351,13 +3369,18 @@ class ReviewAgent:
 
     def _resolve_packaging_lookup(self, query: str):
         try:
-            return resolve_packlist_app_name(self._packaging_project_dir(), query)
+            entries = scan_packlist(self._packaging_project_dir())
         except Exception as primary_exc:
             snapshot = self._packaging_packlist_snapshot()
             if not snapshot:
                 raise primary_exc
             entries = scan_packlist_snapshot(snapshot)
-            return resolve_packlist_app_name_entries(entries, query)
+
+        matches = resolve_packlist_app_name_entries(entries, query)
+        if matches:
+            return matches
+
+        return resolve_packlist_channel_entries(entries, query)
 
     def _all_packaging_entries(self):
         try:
