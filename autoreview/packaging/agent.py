@@ -197,6 +197,9 @@ def format_package_result(result: JsonDict, *, dry_run: bool = False) -> str:
         lines.append(f"- packconfig：{result['packconfig']}")
     if result.get("backup_path"):
         lines.append(f"- 备份：{result['backup_path']}")
+    elapsed_text = result.get("elapsed_text")
+    if elapsed_text:
+        lines.append(f"- 耗时：{elapsed_text}")
     latest = result.get("latest_apks") or []
     if latest and not dry_run:
         lines.append("")
@@ -215,18 +218,35 @@ def format_batch_package_result(results: list[JsonDict], *, dry_run: bool = Fals
     lines = [title, "", "汇总："]
     lines.append(f"- 成功：{len(success)}")
     lines.append(f"- 失败：{len(failed)}")
+    total_elapsed = sum(item.get("elapsed_seconds", 0) for item in results if item.get("ok", True))
+    if total_elapsed > 0:
+        lines.append(f"- 总耗时：{_format_batch_elapsed(total_elapsed)}")
     lines.append("")
     lines.append("任务结果：")
     for item in results[:8]:
         if item.get("ok", True):
             channels = "、".join(str(value) for value in item.get("channels") or [])
-            lines.append(f"- {item.get('name')}：{channels}")
+            elapsed = item.get("elapsed_text")
+            suffix = f"（{elapsed}）" if elapsed else ""
+            lines.append(f"- {item.get('name')}：{channels}{suffix}")
         else:
             lines.append(f"- {item.get('name')}：失败，{item.get('error')}")
     if dry_run:
         lines.append("")
         lines.append("说明：这是预演，没有真正打包。")
     return "\n".join(lines)
+
+
+def _format_batch_elapsed(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}秒"
+    minutes = int(seconds // 60)
+    remaining = seconds - minutes * 60
+    if minutes < 60:
+        return f"{minutes}分{remaining:.1f}秒"
+    hours = minutes // 60
+    mins = minutes % 60
+    return f"{hours}时{mins}分{remaining:.1f}秒"
 
 
 def find_latest_apks(project_dir: str | Path, *, limit: int = 5) -> list[Path]:

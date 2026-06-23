@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import time
 from typing import Any, Callable
 
 
@@ -56,6 +57,7 @@ def run_package_job(job: PackageJob, *, dry_run: bool = False, logger: LogFn | N
 
     packconfig_path.write_text(packconfig_text, encoding="utf-8")
     logger(f"Packaging {job.name}: {packconfig_text}")
+    start_time = time.monotonic()
     process = subprocess.Popen(
         [job.node_command, str(script_to_run)],
         cwd=str(job.project_dir),
@@ -69,8 +71,10 @@ def run_package_job(job: PackageJob, *, dry_run: bool = False, logger: LogFn | N
     for line in process.stdout:
         logger(line.rstrip())
     code = process.wait()
+    elapsed = time.monotonic() - start_time
+    elapsed_str = _format_elapsed(elapsed)
     if code != 0:
-        raise PackageError(f"package.js failed for {job.name}, exit code {code}")
+        raise PackageError(f"package.js failed for {job.name}, exit code {code} (耗时 {elapsed_str})")
     return {
         "name": job.name,
         "project_dir": str(job.project_dir),
@@ -79,6 +83,8 @@ def run_package_job(job: PackageJob, *, dry_run: bool = False, logger: LogFn | N
         "packconfig": packconfig_text,
         "backup_path": str(backup_path) if backup_path else "",
         "exit_code": code,
+        "elapsed_seconds": round(elapsed, 1),
+        "elapsed_text": elapsed_str,
     }
 
 
@@ -191,6 +197,14 @@ def _backup_file(path: Path) -> Path | None:
     backup_path = backup_dir / f"{path.name}.{timestamp}.bak"
     shutil.copy2(path, backup_path)
     return backup_path
+
+
+def _format_elapsed(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}秒"
+    minutes = int(seconds // 60)
+    remaining = seconds - minutes * 60
+    return f"{minutes}分{remaining:.1f}秒"
 
 
 def _parse_channels(value: Any) -> list[str]:
