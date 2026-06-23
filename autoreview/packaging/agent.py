@@ -200,14 +200,18 @@ def parse_package_request(text: str) -> JsonDict:
     channels: list[str] = []
     if channel_match:
         channels = [channel_match.group(1)]
-    elif not pkg_match and not app_name:
-        payload = _extract_payload(clean)
-        if payload and not payload.lower().endswith((".json", ".xls")):
-            channels = [
-                item.strip()
-                for item in re.split(r"[,，\s]+", payload)
-                if item.strip() and not item.strip().startswith("--")
-            ]
+    elif not pkg_match:
+        if not app_name:
+            payload = _extract_payload(clean)
+            if payload and not payload.lower().endswith((".json", ".xls")):
+                channels = _split_channel_tokens(payload)
+            else:
+                stripped = _strip_packaging_prefix(clean)
+                if _looks_like_channel_number_list(stripped):
+                    channels = _split_channel_tokens(stripped)
+        elif _looks_like_channel_number_list(app_name):
+            channels = _split_channel_tokens(app_name)
+            app_name = ""
     return {
         "batch": batch,
         "dry_run": dry_run,
@@ -306,9 +310,37 @@ def _optional_path(value: Any, base_dir: Path) -> Path | None:
     return path.resolve()
 
 
+def _strip_packaging_prefix(text: str) -> str:
+    """Remove packaging-related prefixes from text, e.g. '打包1038和1039' -> '1038和1039'."""
+    clean = str(text or "").strip()
+    clean = re.sub(r"^(帮我|请|麻烦|能不能|可以|想要|我要|我想|需要)\s*", "", clean)
+    clean = re.sub(r"^(打包|批量打包|查找|查询|定位|构建|编译)\s*", "", clean)
+    clean = re.sub(r"\b(dry-run|dry run)\b", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"(试跑|预演|只验证|不真打)", "", clean)
+    clean = re.sub(r"(的)?(包|APK|apk|渠道|版本|应用|软件)\s*$", "", clean)
+    return clean.strip()
+
+
 def _extract_payload(text: str) -> str:
     parts = re.split(r"[:：]", text, maxsplit=1)
     return parts[1].strip() if len(parts) == 2 else ""
+
+
+def _split_channel_tokens(value: str) -> list[str]:
+    """Split a string on Chinese/English separators into channel tokens."""
+    items = re.split(r"[,，\s]+|和|与|以及", str(value or "").strip())
+    return [item.strip() for item in items if item.strip()]
+
+
+def _looks_like_channel_number_list(value: str) -> bool:
+    """Check if value looks like a list of channel numbers, e.g. '1038和1039'."""
+    tokens = _split_channel_tokens(value)
+    if not tokens:
+        return False
+    return all(
+        bool(re.fullmatch(r"(?:[xX][mM])?\d+", token))
+        for token in tokens
+    )
 
 
 def _extract_app_name(text: str) -> str:
@@ -321,7 +353,7 @@ def _extract_app_name(text: str) -> str:
     clean = re.sub(r"(试跑|预演|只验证|不真打)", "", clean)
     clean = re.sub(r"(的)?(包|APK|apk|渠道|版本|应用|软件)\s*$", "", clean)
     clean = re.sub(r"[：:，,。！？?\s]+$", "", clean).strip()
-    if _looks_like_pkg_name(clean) or _looks_like_channel_name(clean):
+    if _looks_like_pkg_name(clean) or _looks_like_channel_name(clean) or _looks_like_channel_number_list(clean):
         return ""
     if len(clean) < 2:
         return ""

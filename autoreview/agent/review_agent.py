@@ -213,15 +213,14 @@ class ReviewAgent:
         return response
 
     def _handle_message_logic(self, session_id: str, clean_text: str, sender_id: str | None = None) -> AgentResponse:
-        hard_rule_response = self._handle_hard_rule(session_id, clean_text, sender_id=sender_id)
-        if hard_rule_response:
-            return hard_rule_response
-
-        tool_response = self._response_from_llm_tool_call(session_id, clean_text, sender_id=sender_id)
-        if tool_response:
-            return tool_response
-
+        # 第 1 层：LLM 优先（所有消息先交给 LLM 判断）
         llm_decision = self._interpret_with_llm(session_id, clean_text, sender_id=sender_id)
+        
+        # 如果 LLM 决定使用工具，直接执行
+        if tool_response := self._response_from_llm_tool_call(session_id, clean_text, sender_id=sender_id):
+            return tool_response
+        
+        # 第 2 层：LLM 决策后的业务路由
         llm_response = self._response_from_llm_decision(
             session_id,
             clean_text,
@@ -231,7 +230,13 @@ class ReviewAgent:
         )
         if llm_response:
             return llm_response
-
+        
+        # 第 3 层：本地硬规则兜底（高频简单场景）
+        hard_rule_response = self._handle_hard_rule(session_id, clean_text, sender_id=sender_id)
+        if hard_rule_response:
+            return hard_rule_response
+        
+        # 第 4 层：本地语义解析兜底
         return self._handle_message_with_local_fallback(session_id, clean_text, sender_id=sender_id)
 
     def _handle_hard_rule(self, session_id: str, clean_text: str, sender_id: str | None = None) -> AgentResponse | None:
@@ -1868,7 +1873,7 @@ class ReviewAgent:
         )
         registry.register(
             "batch_package",
-            "按配置文件批量打包 APK，或按指定应用名批量打包。支持 dry_run。",
+            "按配置文件批量打包 APK，或按指定应用名/渠道批量打包。支持 dry_run。",
             {
                 "type": "object",
                 "properties": {
@@ -1877,6 +1882,11 @@ class ReviewAgent:
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "要打包的应用名列表，如 ['三年级英语上册', '三年级英语下册']。提供时按应用名打包，不提供时按配置文件批量打包。",
+                    },
+                    "channels": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要打包的渠道列表，如 ['1038', '1039'] 或 ['xm1038', 'xm1039']。提供时按渠道逐次打包。",
                     },
                 },
                 "additionalProperties": True,
@@ -2184,6 +2194,7 @@ class ReviewAgent:
 
     def _tool_batch_package(self, call: ToolCall, context: JsonDict) -> AgentResponse | None:
         app_names = _normalize_string_list(call.arguments.get("app_names") or [])
+        channels = _normalize_string_list(call.arguments.get("channels") or [])
         return self._run_packaging_intent(
             str(context.get("session_id") or ""),
             str(context.get("text") or ""),
@@ -2191,6 +2202,7 @@ class ReviewAgent:
                 "intent": "batch_package",
                 "dry_run": bool(call.arguments.get("dry_run")),
                 "app_names": app_names,
+                "channels": channels,
             },
         )
 
@@ -3156,8 +3168,26 @@ class ReviewAgent:
         parsed = parse_package_request(text)
         dry_run = bool(decision.get("dry_run")) or bool(parsed.get("dry_run"))
         app_names = _normalize_string_list(decision.get("app_names") or [])
+        channels = _normalize_string_list(
+            decision.get("channels") or parsed.get("channels") or []
+        )
         try:
             if decision.get("intent") == "batch_package" or parsed.get("batch"):
+                if channels:
+                    results: list[JsonDict] = []
+                    for channel in channels:
+                        try:
+                            result = self.packaging_agent.package_one(
+                                channels=[channel],
+                                dry_run=dry_run,
+                            )
+                            results.append({"ok": True, **result})
+                        except Exception as exc:
+                            results.append({"ok": False, "name": channel, "error": str(exc)})
+                    return AgentResponse(
+                        format_batch_package_result(results, dry_run=dry_run),
+                        {"intent": "batch_package", "result": results, "dry_run": dry_run},
+                    )
                 if app_names:
                     result = self.packaging_agent.package_batch_by_app_names(
                         app_names, dry_run=dry_run, continue_on_error=True,
