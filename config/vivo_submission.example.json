@@ -10,6 +10,7 @@
     "client_secret": "填写 vivo 开放平台 client_secret 或 app_secret"
   },
   "llm_config_path": "llm_config.json",
+  "shared_submission_path": "shared_submission.example.json",
   "vivo": {
     "base_url": "填写 vivo 开放平台 API 根地址",
     "token_path": "填写 token 接口路径",
@@ -26,50 +27,5 @@
     "review_interval_seconds": 600,
     "review_timeout_seconds": 86400
   },
-  "submission": {
-    "pkg_name": "com.example.app",
-    "version_code": "10001",
-    "version_name": "1.0.1",
-    "last_rejection_reason": "",
-    "apk_url": {
-      "path": "../release/app-release.apk",
-      "cpu_code": 0
-    },
-    "app_name": "示例应用",
-    "second_category_id": "1",
-    "third_category_id": "101",
-    "summary": "一句话应用简介，按渠道后台要求控制字数。",
-    "detail_desc": "应用详细介绍。",
-    "update_desc": "本次更新说明。",
-    "privacy_source_url": "https://example.com/privacy.html",
-    "icon_url": {
-      "path": "../assets/icon.png"
-    },
-    "pic_url": [
-      {
-        "path": "../assets/screenshot-1.png"
-      },
-      {
-        "path": "../assets/screenshot-2.png"
-      }
-    ],
-    "online_type": "1",
-    "test_desc": "测试账号、测试步骤或不需要登录的说明。",
-    "copyright_url": {
-      "path": "../assets/copyright.pdf"
-    },
-    "icp_url": {
-      "path": "../assets/icp-proof.png"
-    },
-    "special_url": [
-      {
-        "path": "../assets/special-certificate.png"
-      }
-    ],
-    "business_username": "张三",
-    "business_email": "developer@example.com",
-    "business_mobile": "13800000000",
-    "age_level": "3",
-    "adaptive_equipment": "1"
-  }
+  "submission": {}
 }

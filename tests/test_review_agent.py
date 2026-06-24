@@ -17,6 +17,7 @@ from autoreview.feishu.server import FeishuWebhookApp, _looks_like_oppo_rejectio
 class FakeOppoWorkflowAgent:
     def __init__(self):
         self.status_version_code = None
+        self.list_created_apps_call = None
 
     def status(self, version_code=None):
         self.status_version_code = version_code
@@ -29,6 +30,24 @@ class FakeOppoWorkflowAgent:
                 "refuse_reason": "资质缺失",
             },
             "review_state": "rejected",
+        }
+
+    def list_created_apps(self, pkg_names=None, limit=100):
+        self.list_created_apps_call = {"pkg_names": pkg_names, "limit": limit}
+        return {
+            "apps": [
+                {
+                    "app_id": "30472919",
+                    "app_name": "小学四年级英语",
+                    "pkg_name": "com.pelbs.book43",
+                    "audit_status_name": "未发布",
+                    "app_create_time": "2021-02-08 22:48:13",
+                }
+            ],
+            "errors": [{"pkg_name": "com.pelbs.book1003", "error": "开发者ID和包名不匹配"}],
+            "queried_count": 2,
+            "total_candidates": 2,
+            "truncated": False,
         }
 
     def validate(self):
@@ -302,6 +321,40 @@ class ReviewAgentTest(unittest.TestCase):
         self.assertIn("OPPO 审核状态", response.text)
         self.assertIn("审核不通过", response.text)
         self.assertIn("资质缺失", response.text)
+
+    def test_query_oppo_created_apps_uses_app_list_not_status(self):
+        fake_agent = FakeOppoWorkflowAgent()
+        agent = ReviewAgent(
+            JsonStateStore(Path(tempfile.mkdtemp()) / "state.json"),
+            oppo_agent_factory=lambda: fake_agent,
+        )
+        agent.state_store.update_session("chat-1", {"app_info": {"pkg_name": "com.pelbs.book1003"}})
+
+        response = agent.handle_message("chat-1", "查询oppo平台的创建的应用。")
+
+        self.assertIsNone(fake_agent.status_version_code)
+        self.assertIsNotNone(fake_agent.list_created_apps_call)
+        self.assertEqual(response.data["intent"], "oppo_app_list")
+        self.assertIn("OPPO 已创建应用查询", response.text)
+        self.assertIn("小学四年级英语", response.text)
+        self.assertIn("未匹配或查询失败：1 个", response.text)
+
+    def test_query_oppo_created_apps_skips_llm_status_misroute(self):
+        fake_agent = FakeOppoWorkflowAgent()
+        llm = FakeLlmClient(tool_call={"tool": "oppo_status", "confidence": 0.99, "arguments": {}})
+        agent = ReviewAgent(
+            JsonStateStore(Path(tempfile.mkdtemp()) / "state.json"),
+            oppo_agent_factory=lambda: fake_agent,
+            llm_client=llm,
+        )
+        agent.state_store.update_session("chat-1", {"app_info": {"pkg_name": "com.pelbs.book1003"}})
+
+        response = agent.handle_message("chat-1", "查询oppo平台的创建的应用。")
+
+        self.assertEqual(llm.calls, [])
+        self.assertEqual(llm.tool_calls, [])
+        self.assertIsNone(fake_agent.status_version_code)
+        self.assertEqual(response.data["intent"], "oppo_app_list")
 
     def test_package_message_runs_packaging_agent(self):
         fake_packaging = FakePackagingAgent()

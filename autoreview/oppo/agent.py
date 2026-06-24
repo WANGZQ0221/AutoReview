@@ -228,6 +228,39 @@ class OppoSubmissionAgent:
             "review_state": classify_review_state(info),
         }
 
+    def list_created_apps(self, pkg_names: list[str] | None = None, *, limit: int = 100) -> JsonDict:
+        submission = self.config.resolved_submission()
+        candidates = pkg_names or [str(submission.get("pkg_name") or "")]
+        unique_pkg_names: list[str] = []
+        seen: set[str] = set()
+        for pkg_name in candidates:
+            clean = str(pkg_name or "").strip()
+            if clean and clean not in seen:
+                seen.add(clean)
+                unique_pkg_names.append(clean)
+
+        apps: list[JsonDict] = []
+        errors: list[JsonDict] = []
+        for pkg_name in unique_pkg_names[:limit]:
+            try:
+                info = self.client.get_app_info(pkg_name)
+            except OppoApiError as exc:
+                errors.append({"pkg_name": pkg_name, "error": str(exc)})
+                continue
+            app = _summarize_app_info(info, fallback_pkg_name=pkg_name)
+            if app.get("app_id") or app.get("pkg_name") or app.get("app_name"):
+                apps.append(app)
+            else:
+                errors.append({"pkg_name": pkg_name, "error": "OPPO 未返回应用信息"})
+
+        return {
+            "apps": apps,
+            "errors": errors,
+            "queried_count": min(len(unique_pkg_names), limit),
+            "total_candidates": len(unique_pkg_names),
+            "truncated": len(unique_pkg_names) > limit,
+        }
+
     def prepare_release_params(self) -> JsonDict:
         return self._prepare_params(include_apk=True)
 
@@ -403,6 +436,20 @@ def classify_review_state(info: JsonDict) -> str:
     if info.get("audit_status") or info.get("audit_status_name"):
         return "reviewing"
     return "unknown"
+
+
+def _summarize_app_info(info: JsonDict, *, fallback_pkg_name: str = "") -> JsonDict:
+    return {
+        "app_id": str(info.get("app_id") or ""),
+        "app_name": str(info.get("app_name") or info.get("name") or ""),
+        "pkg_name": str(info.get("pkg_name") or info.get("package_name") or fallback_pkg_name),
+        "dev_id": str(info.get("dev_id") or ""),
+        "audit_status_name": str(info.get("audit_status_name") or info.get("state_name") or ""),
+        "app_create_time": str(info.get("app_create_time") or info.get("create_time") or ""),
+        "update_time": str(info.get("update_time") or ""),
+        "is_freeze": str(info.get("is_freeze") or ""),
+        "freeze_reason": str(info.get("freeze_reason") or ""),
+    }
 
 
 def extract_rejection_reason(info: JsonDict) -> str:

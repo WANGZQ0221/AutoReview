@@ -47,6 +47,7 @@ AutoReview 用于把 Android 应用的“打包、提交、查询、审核协作
 - `autoreview/agent/`：飞书聊天指令、会话状态、配置编辑。
 - `autoreview/market/`：应用商店公开搜索、竞品指标快照。
 - `config/oppo_submission.example.json`：OPPO 提交配置模板。
+- `config/shared_submission.example.json`：各应用商店可复用的提交资料模板。
 - `config/llm_config.example.json`：共享大模型配置模板，可被各厂商配置复用。
 - `config/oppo_batch.example.json`：OPPO 批量提交配置模板。
 - `config/package_batch.example.json`：批量打包配置模板。
@@ -730,12 +731,13 @@ cd D:\development_sercer\AutoReview
 
 - `config/packaging.json`：通用打包配置，包括 Android 项目目录、`package.js`、批量打包清单、packlist 扫描快照。所有应用商店复用。
 - `config/package_batch.json`：批量打包任务清单，只描述要打哪些项目/渠道。
-- `config/oppo_submission.json`：OPPO 凭证、OPPO API 地址、提交字段、材料字段、飞书入口配置。
+- `config/shared_submission.json`：各厂商可复用的提交资料，包括包名、版本、应用名、简介、APK、图标、截图、软著、ICP、联系人等。
+- `config/oppo_submission.json`：OPPO 凭证、OPPO API 地址、OPPO 专属提交覆盖字段、飞书入口配置。
 - `config/xiaomi_submission.json`、`config/honor_submission.json`、`config/vivo_submission.json`、`config/huawei_submission.json`：各厂商自己的提交配置，后续接 API 时只放各自平台字段。
 - `config/llm_config.json`：共享大模型配置。各厂商配置通过 `llm_config_path` 引用。
 - `config/market_data.json`：竞品/应用商店公开数据查询配置。通过 `market_data_config_path` 引用。
 
-原则：打包配置不放进某个商店的 submission 配置；商店配置只负责“提交到哪里、提交什么材料、用什么凭证”。
+原则：打包配置不放进某个商店的 submission 配置；通用提交资料放进 `shared_submission.json`；商店配置只负责“提交到哪里、平台专属覆盖字段、用什么凭证”。
 
 说明：
 

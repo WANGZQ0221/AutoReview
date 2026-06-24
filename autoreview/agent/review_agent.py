@@ -213,6 +213,9 @@ class ReviewAgent:
         return response
 
     def _handle_message_logic(self, session_id: str, clean_text: str, sender_id: str | None = None) -> AgentResponse:
+        if self._looks_like_oppo_app_list_request(clean_text.lower()):
+            return self.query_oppo_app_list(session_id, sender_id=sender_id)
+
         # 第 1 层：LLM 优先（所有消息先交给 LLM 判断）
         llm_decision = self._interpret_with_llm(session_id, clean_text, sender_id=sender_id)
         
@@ -240,6 +243,9 @@ class ReviewAgent:
         return self._handle_message_with_local_fallback(session_id, clean_text, sender_id=sender_id)
 
     def _handle_hard_rule(self, session_id: str, clean_text: str, sender_id: str | None = None) -> AgentResponse | None:
+        if self._looks_like_oppo_app_list_request(clean_text.lower()):
+            return self.query_oppo_app_list(session_id, sender_id=sender_id)
+
         market_followup = self._handle_market_followup(session_id, clean_text, sender_id=sender_id)
         if market_followup:
             return market_followup
@@ -436,6 +442,9 @@ class ReviewAgent:
         if self._looks_like_default_app_question(clean_text.lower()):
             return self.describe_default_app(session_id)
 
+        if self._looks_like_oppo_app_list_request(clean_text.lower()):
+            return self.query_oppo_app_list(session_id, sender_id=sender_id)
+
         if clean_text.startswith("查询审核状态") or clean_text in {"审核状态", "OPPO状态", "oppo状态"}:
             return self.query_oppo_status(clean_text, session_id=session_id, sender_id=sender_id)
 
@@ -625,6 +634,29 @@ class ReviewAgent:
         return AgentResponse(
             self._format_oppo_status(status),
             {"intent": "oppo_status", "status": status},
+        )
+
+    def query_oppo_app_list(
+        self,
+        session_id: str,
+        *,
+        sender_id: str | None = None,
+        limit: int = 100,
+    ) -> AgentResponse:
+        try:
+            pkg_names = self._oppo_app_list_candidates(session_id)
+            result = self._make_oppo_agent().list_created_apps(pkg_names=pkg_names, limit=limit)
+        except OppoError as exc:
+            return AgentResponse(
+                _format_error_message("查询 OPPO 已创建应用失败", str(exc), ["检查 OPPO 配置和 packlist 快照后重试。"]),
+                {"intent": "oppo_app_list", "error": str(exc)},
+            )
+        if sender_id:
+            result["sender_id"] = sender_id
+        self.state_store.update_session(session_id, {"last_oppo_app_list": result})
+        return AgentResponse(
+            self._format_oppo_app_list(result),
+            {"intent": "oppo_app_list", "result": result},
         )
 
     def check_submission(self, session_id: str) -> AgentResponse:
@@ -928,6 +960,9 @@ class ReviewAgent:
 
         if self._looks_like_clear_session_request(lowered):
             return self.clear_session_state(session_id)
+
+        if self._looks_like_oppo_app_list_request(lowered):
+            return self.query_oppo_app_list(session_id, sender_id=sender_id)
 
         if self._looks_like_oppo_status_request(lowered):
             return self.query_oppo_status(text, session_id=session_id, sender_id=sender_id)
@@ -1429,6 +1464,8 @@ class ReviewAgent:
         if intent == "remediation_checklist":
             return self.build_remediation_checklist(session_id, sender_id=sender_id)
         if intent == "oppo_status":
+            if self._looks_like_oppo_app_list_request(text.lower()):
+                return self.query_oppo_app_list(session_id, sender_id=sender_id)
             version_code = str(decision.get("version_code") or "").strip()
             return self.query_oppo_status(
                 f"查询审核状态：{version_code}" if version_code else text,
@@ -1759,6 +1796,16 @@ class ReviewAgent:
             self._tool_oppo_status,
         )
         registry.register(
+            "oppo_app_list",
+            "查询 OPPO 平台当前开发者账号下已创建应用；基于本地 packlist/config 包名逐个确认。",
+            {
+                "type": "object",
+                "properties": {"limit": {"type": "integer"}},
+                "additionalProperties": True,
+            },
+            self._tool_oppo_app_list,
+        )
+        registry.register(
             "submission_check",
             "执行提交前检查，检查配置、缺文件和最近驳回重提风险。",
             {"type": "object", "properties": {}, "additionalProperties": False},
@@ -1970,6 +2017,7 @@ class ReviewAgent:
         except ValueError:
             return None
         tool_call = self._normalize_market_tool_call(tool_call, text)
+        tool_call = self._normalize_oppo_tool_call(tool_call, text)
         if tool_call.is_noop:
             return None
         if tool_call.confidence is not None and tool_call.confidence < 0.45:
@@ -2013,6 +2061,16 @@ class ReviewAgent:
             confidence=tool_call.confidence,
             reason=tool_call.reason or "用户是在查应用商店公开指标，不是要求记录月度下载快照。",
         )
+
+    def _normalize_oppo_tool_call(self, tool_call: ToolCall, text: str) -> ToolCall:
+        if tool_call.name == "oppo_status" and self._looks_like_oppo_app_list_request(text.lower()):
+            return ToolCall(
+                name="oppo_app_list",
+                arguments={},
+                confidence=tool_call.confidence,
+                reason=tool_call.reason or "用户要查询 OPPO 平台已创建应用列表，不是单个应用审核状态。",
+            )
+        return tool_call
 
     def _summarize_tool_response(
         self,
@@ -2065,6 +2123,14 @@ class ReviewAgent:
             text,
             session_id=str(context.get("session_id") or ""),
             sender_id=context.get("sender_id"),
+        )
+
+    def _tool_oppo_app_list(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        limit = _optional_int(call.arguments.get("limit")) or 100
+        return self.query_oppo_app_list(
+            str(context.get("session_id") or ""),
+            sender_id=context.get("sender_id"),
+            limit=limit,
         )
 
     def _tool_submission_check(self, call: ToolCall, context: JsonDict) -> AgentResponse:
@@ -2781,6 +2847,12 @@ class ReviewAgent:
     def _looks_like_oppo_status_request(self, text: str) -> bool:
         return self._contains_any(text, ("审核状态", "审核进度", "oppo状态", "oppo 状态", "查审核", "查询审核"))
 
+    def _looks_like_oppo_app_list_request(self, text: str) -> bool:
+        return self._contains_any(text, ("oppo", "开放平台")) and self._contains_any(
+            text,
+            ("创建的应用", "已创建应用", "创建应用", "应用列表", "所有应用", "全部应用"),
+        )
+
     def _looks_like_submission_check_request(self, text: str) -> bool:
         return self._contains_any(
             text,
@@ -3073,6 +3145,45 @@ class ReviewAgent:
             reason = extract_rejection_reason(app_info)
             if reason:
                 lines.append(f"- 驳回原因：{_shorten(reason)}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_oppo_app_list(result: JsonDict) -> str:
+        apps = result.get("apps") or []
+        errors = result.get("errors") or []
+        lines = [
+            "OPPO 已创建应用查询",
+            "",
+            "查询方式：",
+            "- 按本地 packlist/config 中的包名逐个查询 OPPO 应用信息接口。",
+            "",
+            "结果：",
+            f"- 已确认创建：{len(apps)} 个",
+            f"- 已查询包名：{result.get('queried_count') or 0} / {result.get('total_candidates') or 0}",
+        ]
+        if result.get("truncated"):
+            lines.append("- 说明：候选包名较多，本次只查询了前一部分。")
+        if errors:
+            lines.append(f"- 未匹配或查询失败：{len(errors)} 个")
+        if not apps:
+            lines.extend(["", "应用列表：", "- 暂未确认到已创建应用。"])
+            return "\n".join(lines)
+
+        lines.extend(["", "应用列表："])
+        for index, app in enumerate(apps[:30], start=1):
+            name = app.get("app_name") or app.get("pkg_name") or "未命名应用"
+            details = [str(name)]
+            if app.get("pkg_name"):
+                details.append(str(app["pkg_name"]))
+            if app.get("audit_status_name"):
+                details.append(f"状态：{app['audit_status_name']}")
+            if app.get("app_id"):
+                details.append(f"OPPO应用ID：{app['app_id']}")
+            if app.get("app_create_time"):
+                details.append(f"创建时间：{app['app_create_time']}")
+            lines.append(f"{index}. " + "，".join(details))
+        if len(apps) > 30:
+            lines.append(f"... 还有 {len(apps) - 30} 个未展示。")
         return "\n".join(lines)
 
     @staticmethod
@@ -3424,6 +3535,29 @@ class ReviewAgent:
             if not snapshot:
                 raise primary_exc
             return scan_packlist_snapshot(snapshot)
+
+    def _oppo_app_list_candidates(self, session_id: str = "") -> list[str]:
+        candidates: list[str] = []
+        try:
+            candidates.extend(str(entry.pkg_name or "") for entry in self._all_packaging_entries())
+        except Exception:
+            pass
+        session_app = self.state_store.get_session(session_id).get("app_info") if session_id else {}
+        if isinstance(session_app, dict) and session_app.get("pkg_name"):
+            candidates.append(str(session_app["pkg_name"]))
+        config_app = self._config_app_info()
+        if config_app.get("pkg_name"):
+            candidates.append(str(config_app["pkg_name"]))
+        seen: set[str] = set()
+        result: list[str] = []
+        for pkg_name in candidates:
+            clean = str(pkg_name or "").strip()
+            if clean and clean not in seen:
+                seen.add(clean)
+                result.append(clean)
+        if not result:
+            raise OppoError("没有可用于查询的包名；请先配置 packlist 快照或 submission.pkg_name")
+        return result
 
     def _render_packaging_lookup_page(
         self,

@@ -33,6 +33,35 @@ def resolve_path_like(value: Any, base_dir: Path) -> Any:
     return value
 
 
+def merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_shared_submission(raw: dict[str, Any], config_path: Path) -> dict[str, Any]:
+    shared_path_value = raw.get("shared_submission_path") or raw.get("submission_config_path")
+    if not shared_path_value:
+        return {}
+    shared_path = _as_path(str(shared_path_value), config_path.parent).resolve()
+    try:
+        shared_raw = json.loads(shared_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise OppoConfigError(f"Shared submission config not found: {shared_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise OppoConfigError(f"Shared submission config is not valid JSON: {exc}") from exc
+    if not isinstance(shared_raw, dict):
+        raise OppoConfigError("Shared submission config must be a JSON object")
+    submission = shared_raw.get("submission", shared_raw)
+    if not isinstance(submission, dict):
+        raise OppoConfigError("Shared submission config must provide a submission object")
+    return submission
+
+
 @dataclass(frozen=True)
 class OppoApiSettings:
     base_url: str = "https://oop-openapi-cn.heytapmobi.com"
@@ -101,9 +130,13 @@ class OppoSubmissionConfig:
                 "Config must provide credentials.client_id and credentials.client_secret"
             )
 
-        submission = raw.get("submission")
-        if not isinstance(submission, dict):
+        raw_submission = raw.get("submission") or {}
+        if not isinstance(raw_submission, dict):
             raise OppoConfigError("Config must provide a submission object")
+        shared_submission = load_shared_submission(raw, config_path)
+        submission = merge_dicts(shared_submission, raw_submission)
+        if not submission:
+            raise OppoConfigError("Config must provide submission or shared_submission_path")
 
         return cls(
             client_id=str(client_id),

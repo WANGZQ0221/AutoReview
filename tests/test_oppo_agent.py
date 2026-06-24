@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import tempfile
 import unittest
 
@@ -100,6 +101,45 @@ def build_config(base_dir: Path) -> OppoSubmissionConfig:
 
 
 class OppoSubmissionAgentTest(unittest.TestCase):
+    def test_config_merges_shared_submission_with_local_overrides(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            shared_path = base_dir / "shared_submission.json"
+            shared_path.write_text(
+                json.dumps(
+                    {
+                        "submission": {
+                            "pkg_name": "com.example.shared",
+                            "version_code": "100",
+                            "version_name": "1.0.0",
+                            "app_name": "共享应用",
+                            "apk_url": {"path": "../release/app.apk", "cpu_code": 0},
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            config_path = base_dir / "oppo.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "credentials": {"client_id": "client-id", "client_secret": "secret"},
+                        "shared_submission_path": "shared_submission.json",
+                        "submission": {"version_code": "101"},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            config = OppoSubmissionConfig.from_file(config_path)
+
+            self.assertEqual(config.submission["pkg_name"], "com.example.shared")
+            self.assertEqual(config.submission["version_code"], "101")
+            self.assertEqual(config.submission["version_name"], "1.0.0")
+            self.assertEqual(config.submission["app_name"], "共享应用")
+
     def test_validate_and_prepare_release_params(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)

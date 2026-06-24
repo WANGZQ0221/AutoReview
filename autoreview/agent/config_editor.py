@@ -8,6 +8,8 @@ from pathlib import Path
 import shutil
 from typing import Any
 
+from autoreview.oppo.config import load_shared_submission, merge_dicts
+
 
 JsonDict = dict[str, Any]
 
@@ -149,7 +151,7 @@ def apply_config_patch_to_targets(
 def format_config_summary(config_path: str | Path) -> str:
     path = Path(config_path)
     raw = _read_config(path)
-    submission = raw.get("submission") or {}
+    submission = _merged_submission_summary(raw, path)
     feishu = raw.get("feishu") or {}
     image = feishu.get("image_analysis") or {}
     llm = _load_summary_llm_config(raw, feishu, path)
@@ -188,6 +190,17 @@ def format_config_summary(config_path: str | Path) -> str:
         lines.append("密钥状态：")
         lines.extend(secret_lines)
     return "\n".join(lines)
+
+
+def _merged_submission_summary(raw: JsonDict, path: Path) -> JsonDict:
+    submission = raw.get("submission") or {}
+    if not isinstance(submission, dict):
+        submission = {}
+    try:
+        shared_submission = load_shared_submission(raw, path)
+    except Exception:
+        shared_submission = {}
+    return merge_dicts(shared_submission, submission)
 
 
 def _llm_summary_text(llm: JsonDict) -> str:

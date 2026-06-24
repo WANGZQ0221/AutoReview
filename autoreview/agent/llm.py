@@ -595,6 +595,7 @@ ToolCall JSON 协议：
 - 用户要打包单个 APP 用 package_apk；给中文应用名放 app_name，给 com.xxx 放 pkg_name，给 xm1067 放 channels。
 - 用户要查"应用名对应什么包/渠道/版本"用 package_lookup。
 - 用户要批量打包用 batch_package。
+- 用户要查 OPPO 平台"已创建应用/应用列表/所有应用"用 oppo_app_list，不要用 oppo_status。
 - 用户要查 OPPO 审核状态用 oppo_status；版本号放 version_code。
 - 用户问现在状态/进度用 session_status；用户问能做什么用 help。
 - 用户问能不能提交、提交前检查、缺什么材料用 submission_check。
