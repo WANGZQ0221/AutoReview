@@ -370,7 +370,7 @@ class ReviewAgent:
                         "没有识别到要查询的应用名或关键词。",
                         ["请按“搜索应用商店：关键词”或“搜索竞品：关键词”发送，例如“搜索竞品：英语四级单词”。"],
                     ),
-                    {"intent": "market_search", "missing": "query"},
+                    {"intent": "market_search", "missing": "app_name"},
                 )
             research_response = self._handle_app_store_data_platform_research(clean_text, query)
             if research_response:
@@ -405,7 +405,7 @@ class ReviewAgent:
                         "没有识别到要记录的应用名或关键词。",
                         ["请按“记录竞品下载：关键词”发送，例如“记录竞品下载：英语四级单词”。"],
                     ),
-                    {"intent": "market_download_snapshot", "missing": "query"},
+                    {"intent": "market_download_snapshot", "missing": "app_name"},
                 )
             return self.record_competitor_downloads(
                 session_id,
@@ -478,7 +478,7 @@ class ReviewAgent:
                     "没有识别到有效的应用名或关键词。",
                     ["例如发送“搜索应用商店：抖音”或“搜索竞品：英语四级单词”。"],
                 ),
-                {"intent": "market_search", "missing": "query"},
+                {"intent": "market_search", "missing": "app_name"},
             )
         result = self._normalize_market_result(
             self._search_markets(session_id, query, limit=8, target_stores=set(target_stores or []))
@@ -534,7 +534,7 @@ class ReviewAgent:
                     "没有识别到有效的应用名或关键词。",
                     ["例如发送“记录竞品下载：英语四级单词”。"],
                 ),
-                {"intent": "market_download_snapshot", "missing": "query"},
+                {"intent": "market_download_snapshot", "missing": "app_name"},
             )
         result = self._normalize_market_result(
             self._search_markets(session_id, query, limit=8, target_stores=set(target_stores or []))
@@ -867,7 +867,7 @@ class ReviewAgent:
                     "没有识别到应用名或包名。",
                     ["请发送“索引上架资源：八年级语文下册”或“索引上架资源：com.pelbs.book1067”。"],
                 ),
-                {"intent": "index_materials", "missing": "query"},
+                {"intent": "index_materials", "missing": "app_name"},
             )
         if not materials_root:
             return AgentResponse(
@@ -946,7 +946,7 @@ class ReviewAgent:
             if not query:
                 return AgentResponse(
                     "我理解你想做竞品分析，但还缺关键词。可以先发送“记录应用：应用名 / 包名 / 版本号”，或直接说“帮我找英语四级单词的竞品”。",
-                    {"intent": intent, "missing": "query", "semantic": True},
+                    {"intent": intent, "missing": "app_name", "semantic": True},
                 )
             if intent == "market_download_snapshot":
                 return self.record_competitor_downloads(
@@ -1494,9 +1494,10 @@ class ReviewAgent:
                 sender_id=sender_id,
             )
         if intent in {"market_search", "market_download_snapshot"}:
-            query = str(decision.get("query") or self._extract_market_semantic_query(text, session_id)).strip()
+            # 优先使用 app_name，兼容旧的 query 参数
+            query = str(decision.get("app_name") or decision.get("query") or self._extract_market_semantic_query(text, session_id)).strip()
             if not query:
-                return AgentResponse("要查哪个应用方向的竞品？例如“英语四级单词”。", {"intent": intent, "missing": "query"})
+                return AgentResponse("要查哪个应用方向的竞品？例如“英语四级单词”。", {"intent": intent, "missing": "app_name"})
             research_response = self._handle_app_store_data_platform_research(text, query, llm_intent=intent)
             if research_response:
                 return research_response
@@ -1899,12 +1900,13 @@ class ReviewAgent:
             {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string"},
-                    "exact_match": {"type": "boolean"},
-                    "exclude_terms": {"type": "array", "items": {"type": "string"}},
-                    "include_terms": {"type": "array", "items": {"type": "string"}},
-                    "target_stores": {"type": "array", "items": {"type": "string"}},
+                    "app_name": {"type": "string", "description": "要搜索的应用名称或关键词（必需）"},
+                    "exact_match": {"type": "boolean", "description": "是否精确匹配应用名"},
+                    "exclude_terms": {"type": "array", "items": {"type": "string"}, "description": "要排除的关键词"},
+                    "include_terms": {"type": "array", "items": {"type": "string"}, "description": "必须包含的关键词"},
+                    "target_stores": {"type": "array", "items": {"type": "string"}, "description": "目标应用商店列表"},
                 },
+                "required": ["app_name"],  # 明确标记 app_name 为必需参数
                 "additionalProperties": True,
             },
             self._tool_market_search,
@@ -1915,12 +1917,13 @@ class ReviewAgent:
             {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string"},
-                    "exact_match": {"type": "boolean"},
-                    "exclude_terms": {"type": "array", "items": {"type": "string"}},
-                    "include_terms": {"type": "array", "items": {"type": "string"}},
-                    "target_stores": {"type": "array", "items": {"type": "string"}},
+                    "app_name": {"type": "string", "description": "要记录下载数据的应用名称或关键词（必需）"},
+                    "exact_match": {"type": "boolean", "description": "是否精确匹配应用名"},
+                    "exclude_terms": {"type": "array", "items": {"type": "string"}, "description": "要排除的关键词"},
+                    "include_terms": {"type": "array", "items": {"type": "string"}, "description": "必须包含的关键词"},
+                    "target_stores": {"type": "array", "items": {"type": "string"}, "description": "目标应用商店列表"},
                 },
+                "required": ["app_name"],  # 明确标记 app_name 为必需参数
                 "additionalProperties": True,
             },
             self._tool_market_download_snapshot,
@@ -2167,7 +2170,6 @@ class ReviewAgent:
         decision = {
             "intent": "package_lookup",
             "app_name": str(call.arguments.get("app_name") or ""),
-            "query": str(call.arguments.get("query") or ""),
             "offset": call.arguments.get("offset"),
             "page_size": call.arguments.get("page_size"),
             "last_page": bool(call.arguments.get("last_page")),
@@ -2214,7 +2216,8 @@ class ReviewAgent:
         return self._search_local_files(patterns, max_results=int(call.arguments.get("max_results") or 20))
 
     def _tool_market_search(self, call: ToolCall, context: JsonDict) -> AgentResponse:
-        query = str(call.arguments.get("query") or "").strip()
+        # 兼容旧的 query 参数名，优先使用 app_name
+        query = str(call.arguments.get("app_name") or call.arguments.get("query") or "").strip()
         return self.search_competitors(
             str(context.get("session_id") or ""),
             query,
@@ -2227,7 +2230,8 @@ class ReviewAgent:
         )
 
     def _tool_market_download_snapshot(self, call: ToolCall, context: JsonDict) -> AgentResponse:
-        query = str(call.arguments.get("query") or "").strip()
+        # 兼容旧的 query 参数名，优先使用 app_name
+        query = str(call.arguments.get("app_name") or call.arguments.get("query") or "").strip()
         return self.record_competitor_downloads(
             str(context.get("session_id") or ""),
             query,
@@ -3335,7 +3339,7 @@ class ReviewAgent:
                     "没有识别到要查询的应用名。",
                     ["请告诉我应用名，比如“八年级语文下册”或“帮我查四年级英语上册对应什么包”。"],
                 ),
-                {"intent": "package_lookup", "missing": "query"},
+                {"intent": "package_lookup", "missing": "app_name"},
             )
         try:
             matches = self._resolve_packaging_lookup(query)

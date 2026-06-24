@@ -588,7 +588,8 @@ ToolCall JSON 协议：
 - 普通闲聊、解释能力、问配置位置、问记忆机制、问工具调用判断、问 skill 写法等不需要工具，tool=none，并在 reason 里说明。
 - 用户问"你的配置/记忆/工具/skill 怎么处理"时，不要选择 view_submission_config；view_submission_config 只用于查看 OPPO 提交配置摘要。
 - 用户要查应用商店、指定 APP、竞品、下载量时，优先 market_search；只有明确要求"记录/保存/月报/月度统计"本月下载数据时才用 market_download_snapshot。
-- 用户明确"只要某某APP本体，不要极速版/火山版/其他版本"时，arguments.exact_match=true，并把不需要的版本名放到 exclude_terms。
+- 调用 market_search 或 market_download_snapshot 时，必须传入 app_name 参数（必需），不要使用 query 参数。
+- 用户明确"只要某某 APP 本体，不要极速版/火山版/其他版本"时，arguments.exact_match=true，并把不需要的版本名放到 exclude_terms。
 - 用户说"只看 OPPO/小米/华为/荣耀/vivo 应用商店"是一次性范围，放到 target_stores，不要当成长期偏好。
 - 用户说"之前发给过你/刚才说了/其他应用商店/换别的商店搜"时，优先沿用 recent_conversation、session.conversation_history 和 session.last_market_search_request 里的上一轮 market_search 参数，不要改问用户，也不要退回无关的 app_info。
 - 用户要打包单个 APP 用 package_apk；给中文应用名放 app_name，给 com.xxx 放 pkg_name，给 xm1067 放 channels。
