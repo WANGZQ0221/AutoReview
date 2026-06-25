@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 
-from autoreview.oppo.agent import OppoSubmissionAgent, classify_review_state
+from autoreview.oppo.agent import OppoSubmissionAgent, classify_review_state, is_created_app_info
 from autoreview.oppo.batch import apply_submission_overrides, load_batch_jobs
 from autoreview.oppo.config import OppoSubmissionConfig
 from autoreview.oppo.errors import OppoConfigError
@@ -41,7 +41,13 @@ class FakeOppoClient:
         return {"task_state": "2", "pkg_name": pkg_name, "version_code": version_code}
 
     def get_app_info(self, pkg_name, version_code=None):
-        return {"audit_status_name": "审核通过", "state": "1"}
+        return {
+            "app_id": "app-1",
+            "app_name": "示例应用",
+            "pkg_name": pkg_name,
+            "audit_status_name": "审核通过",
+            "state": "1",
+        }
 
 
 class FakeRemoteMaterialClient(FakeOppoClient):
@@ -181,6 +187,48 @@ class OppoSubmissionAgentTest(unittest.TestCase):
             "rejected",
         )
         self.assertEqual(classify_review_state({"audit_status_name": "审核中"}), "reviewing")
+
+    def test_created_app_info_requires_identity_fields(self):
+        self.assertEqual(is_created_app_info({}), False)
+        self.assertEqual(is_created_app_info({"pkg_name": "com.example.empty"}), False)
+        self.assertEqual(is_created_app_info({"audit_status_name": "上线"}), False)
+        self.assertEqual(is_created_app_info({"app_id": "30472919"}), True)
+        self.assertEqual(is_created_app_info({"app_name": "小学四年级英语"}), True)
+
+    def test_list_created_apps_ignores_empty_app_info(self):
+        class EmptyAwareClient(FakeOppoClient):
+            def get_app_info(self, pkg_name, version_code=None):
+                if pkg_name == "com.example.created":
+                    return {
+                        "app_id": "30472919",
+                        "app_name": "小学四年级英语",
+                        "pkg_name": pkg_name,
+                        "app_create_time": "2021-02-08 22:48:13",
+                    }
+                return {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = OppoSubmissionAgent(build_config(Path(temp_dir)), client=EmptyAwareClient())
+
+            result = agent.list_created_apps(
+                ["com.example.empty", "com.example.created"],
+                limit=10,
+            )
+
+            self.assertEqual([app["pkg_name"] for app in result["apps"]], ["com.example.created"])
+            self.assertEqual(result["errors"][0]["pkg_name"], "com.example.empty")
+            self.assertIn("未返回可确认创建", result["errors"][0]["error"])
+
+    def test_ensure_app_created_rejects_empty_app_info(self):
+        class EmptyAppClient(FakeOppoClient):
+            def get_app_info(self, pkg_name, version_code=None):
+                return {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = OppoSubmissionAgent(build_config(Path(temp_dir)), client=EmptyAppClient())
+
+            with self.assertRaises(OppoConfigError):
+                agent.ensure_app_created()
 
     def test_rejection_analysis_blocks_same_apk_resubmission(self):
         analysis = analyze_rejection_reason(REJECTION_REASON)

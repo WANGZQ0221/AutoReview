@@ -64,7 +64,7 @@ AutoReview 用于把 Android 应用的“打包、提交、查询、审核协作
 复制 OPPO 配置：
 
 ```powershell
-cd D:\development_sercer\AutoReview
+cd D:\AutoReview
 Copy-Item config\oppo_submission.example.json config\oppo_submission.json
 ```
 
@@ -97,14 +97,14 @@ Copy-Item config\oppo_submission.example.json config\oppo_submission.json
 把 APK 放到本地，例如：
 
 ```powershell
-$Apk = "D:\development_sercer\AutoReview\release\app-release.apk"
+$Apk = "D:\AutoReview\release\app-release.apk"
 Test-Path $Apk
 ```
 
 提交：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json submit `
+D:\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json submit `
   --apk "$Apk" `
   --reuse-remote-materials `
   --wait-task `
@@ -121,7 +121,7 @@ D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo
 如果本次提交的新版本号和复用材料的旧版本号不同：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json submit `
+D:\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json submit `
   --apk "$Apk" `
   --version-code 65 `
   --version-name 3.1400.34.6 `
@@ -134,19 +134,19 @@ D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo
 ### 2. 查询状态
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json status
+D:\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json status
 ```
 
 指定版本号：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json status --version-code 65
+D:\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json status --version-code 65
 ```
 
 ### 3. 校验本地配置
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json validate
+D:\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json validate
 ```
 
 注意：如果你提交时使用 `--reuse-remote-materials`，本地可以没有图标/截图/版权证明文件；这些材料会在提交时从 OPPO 平台现有版本复用。
@@ -180,7 +180,7 @@ Copy-Item config\oppo_batch.example.json config\oppo_batch.json
 执行：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json batch-submit `
+D:\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json batch-submit `
   --batch-file config\oppo_batch.json `
   --wait-task
 ```
@@ -188,7 +188,7 @@ D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo
 失败后继续后续任务：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json batch-submit `
+D:\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json batch-submit `
   --batch-file config\oppo_batch.json `
   --wait-task `
   --continue-on-error
@@ -197,7 +197,7 @@ D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo
 批量任务也支持复用 OPPO 远程材料：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json batch-submit `
+D:\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json batch-submit `
   --batch-file config\oppo_batch.json `
   --reuse-remote-materials `
   --wait-task
@@ -219,30 +219,30 @@ gradlew 或 gradlew.bat
 ```powershell
 cd D:\你的Android项目目录
 npm install node-xlsx iconv-lite
-cd D:\development_sercer\AutoReview
+cd D:\AutoReview
 ```
 
 先 dry-run：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py package-apk `
+D:\AutoReview\.venv\Scripts\python.exe main.py package-apk `
   --project-dir D:\你的Android项目目录 `
   --channels book1400 book1401 `
-  --script D:\development_sercer\AutoReview\package.js `
+  --script D:\AutoReview\package.js `
   --dry-run
 ```
 
 也可以先扫描 `packlist.xls`，查看项目能打哪些包：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py scan-packlist `
+D:\AutoReview\.venv\Scripts\python.exe main.py scan-packlist `
   --project-dir D:\你的Android项目目录
 ```
 
 按包名反查渠道：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py resolve-package `
+D:\AutoReview\.venv\Scripts\python.exe main.py resolve-package `
   --project-dir D:\你的Android项目目录 `
   --pkg-name com.pelbs.book1067
 ```
@@ -250,20 +250,20 @@ D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py resolve-packag
 按包名自动解析渠道并打包，适合先用应用市场配置里的包名找对应渠道：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py package-apk `
+D:\AutoReview\.venv\Scripts\python.exe main.py package-apk `
   --project-dir D:\你的Android项目目录 `
   --pkg-name com.pelbs.book1067 `
-  --script D:\development_sercer\AutoReview\package.js `
+  --script D:\AutoReview\package.js `
   --dry-run
 ```
 
 实际打包：
 
 ```powershell
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py package-apk `
+D:\AutoReview\.venv\Scripts\python.exe main.py package-apk `
   --project-dir D:\你的Android项目目录 `
   --channels book1400 book1401 `
-  --script D:\development_sercer\AutoReview\package.js
+  --script D:\AutoReview\package.js
 ```
 
 默认会跳过 `package.js` 结束后的 `start.bat` 自动执行，只做打包。如果要保留旧逻辑：
@@ -286,7 +286,7 @@ $Apk
 
 ```powershell
 Copy-Item config\package_batch.example.json config\package_batch.json
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py batch-package --batch-file config\package_batch.json
+D:\AutoReview\.venv\Scripts\python.exe main.py batch-package --batch-file config\package_batch.json
 ```
 
 打包包装器会写目标项目的 `packconfig.txt`，如果原文件存在，会先备份到目标项目的 `backups/` 目录。
@@ -353,21 +353,21 @@ Copy-Item config\packaging.example.json config\packaging.json
 ## 打包后直接提交
 
 ```powershell
-cd D:\development_sercer\AutoReview
+cd D:\AutoReview
 
 $Project = "D:\你的Android项目目录"
 $Channel = "book1400"
 
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py package-apk `
+D:\AutoReview\.venv\Scripts\python.exe main.py package-apk `
   --project-dir "$Project" `
   --channels $Channel `
-  --script D:\development_sercer\AutoReview\package.js
+  --script D:\AutoReview\package.js
 
 $Apk = Get-ChildItem "$Project\app\build\outputs\apk" -Recurse -Filter *.apk |
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 1 -ExpandProperty FullName
 
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json submit `
+D:\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json submit `
   --apk "$Apk" `
   --reuse-remote-materials `
   --wait-task `
@@ -393,8 +393,8 @@ D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo
 启动智能体应用 HTTP 服务：
 
 ```powershell
-cd D:\development_sercer\AutoReview
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json serve-agent-app --host 0.0.0.0 --port 8090
+cd D:\AutoReview
+D:\AutoReview\.venv\Scripts\python.exe main.py -c config\oppo_submission.json serve-agent-app --host 0.0.0.0 --port 8090
 ```
 
 健康检查：
@@ -459,14 +459,14 @@ Invoke-RestMethod `
 进入项目目录后启动：
 
 ```powershell
-cd D:\development_sercer\AutoReview
+cd D:\AutoReview
 .\start_feishu_ws.ps1
 ```
 
 指定配置文件和日志级别启动：
 
 ```powershell
-cd D:\development_sercer\AutoReview
+cd D:\AutoReview
 .\start_feishu_ws.ps1 -Config "config\oppo_submission.json" -LogLevel INFO
 ```
 
@@ -475,7 +475,7 @@ cd D:\development_sercer\AutoReview
 停止长连接：
 
 ```powershell
-cd D:\development_sercer\AutoReview
+cd D:\AutoReview
 .\stop_feishu_ws.ps1
 ```
 
@@ -507,9 +507,9 @@ cd D:\development_sercer\AutoReview
 操作：启动程序
 程序或脚本：powershell.exe
 添加参数：
--NoProfile -ExecutionPolicy Bypass -File "D:\development_sercer\AutoReview\start_feishu_ws.ps1"
+-NoProfile -ExecutionPolicy Bypass -File "D:\AutoReview\start_feishu_ws.ps1"
 起始于：
-D:\development_sercer\AutoReview
+D:\AutoReview
 ```
 
 6. “条件”页按需取消“只有在计算机使用交流电源时才启动此任务”。
@@ -527,9 +527,9 @@ D:\development_sercer\AutoReview
 启动后检查：
 
 ```powershell
-Test-Path D:\development_sercer\AutoReview\data\feishu_ws.pid
-Get-Content D:\development_sercer\AutoReview\logs\feishu-ws.out.log -Tail 50
-Get-Content D:\development_sercer\AutoReview\logs\feishu-ws.err.log -Tail 50
+Test-Path D:\AutoReview\data\feishu_ws.pid
+Get-Content D:\AutoReview\logs\feishu-ws.out.log -Tail 50
+Get-Content D:\AutoReview\logs\feishu-ws.err.log -Tail 50
 ```
 
 启动后日志会追加写入，不会清空历史日志：
@@ -672,7 +672,7 @@ OPPO、小米、荣耀、vivo、华为等提交配置里只需要引用：
 修改后重启飞书机器人：
 
 ```powershell
-cd D:\development_sercer\AutoReview
+cd D:\AutoReview
 .\stop_feishu_ws.ps1
 .\start_feishu_ws.ps1
 ```
@@ -795,8 +795,8 @@ adaptive_equipment
 ## 测试
 
 ```powershell
-cd D:\development_sercer\AutoReview
-D:\development_sercer\AutoReview\.venv\Scripts\python.exe -B -m unittest discover -s tests
+cd D:\AutoReview
+D:\AutoReview\.venv\Scripts\python.exe -B -m unittest discover -s tests
 ```
 
 当前测试覆盖：

@@ -201,20 +201,47 @@ def _merge_res_path_candidates(
                     existing.insert(0, candidate)
                 break
 
-    parent = Path(res_path).parent
-    sibling_files = [f for f in parent.rglob("*") if f.is_file() and f.suffix.lower() in RESOURCE_EXTENSIONS]
+    material_root = _material_root_from_res_path(res_path)
+    sibling_files = [
+        f
+        for f in material_root.rglob("*")
+        if f.is_file() and f.suffix.lower() in RESOURCE_EXTENSIONS
+    ]
     for kind, hints in (("screenshots", SCREENSHOT_HINTS), ("copyright", COPYRIGHT_HINTS), ("special", SPECIAL_HINTS)):
         for f in sibling_files:
             text = _normalize_text(str(f))
             if any(_normalize_text(h) in text for h in hints):
                 alias_hits = [a for a in aliases if a and a in text]
-                if alias_hits:
-                    candidate = MaterialCandidate(
-                        kind=kind, path=str(f), score=150, reason="packlist res_path sibling",
-                    )
-                    existing = candidates[kind]
-                    if not any(c.path == candidate.path for c in existing):
-                        existing.insert(0, candidate)
+                if kind == "screenshots":
+                    score = 170 if _is_in_named_dir(f, {"screenshot", "screenshots", "截图"}) else 130
+                else:
+                    score = 150 if alias_hits else 70
+                candidate = MaterialCandidate(
+                    kind=kind, path=str(f), score=score, reason="packlist res_path material root",
+                )
+                existing = candidates[kind]
+                if not any(c.path == candidate.path for c in existing):
+                    existing.append(candidate)
+    for key, value in candidates.items():
+        candidates[key] = sorted(value, key=lambda item: (-item.score, _path_sort_key(item.path)))[:20]
+
+
+def _material_root_from_res_path(res_path: str | Path) -> Path:
+    path = Path(res_path)
+    name = _normalize_text(path.name)
+    parent_name = _normalize_text(path.parent.name)
+    if name in {"android", "ios"} and parent_name.startswith("icons"):
+        return path.parent.parent
+    if name.startswith("icons"):
+        return path.parent
+    if name in {"android", "ios"}:
+        return path.parent
+    return path.parent
+
+
+def _is_in_named_dir(path: Path, names: set[str]) -> bool:
+    normalized_names = {_normalize_text(name) for name in names}
+    return any(_normalize_text(part) in normalized_names for part in path.parts[:-1])
 
 
 def _score_path(path: Path, aliases: set[str], kind: str) -> tuple[int, str]:

@@ -12,12 +12,15 @@ from autoreview.feishu.events import extract_message_event
 from autoreview.feishu.config import FeishuConfig
 from autoreview.feishu.image_analysis import ImageAnalysisClient
 from autoreview.feishu.server import FeishuWebhookApp, _looks_like_oppo_rejection
+from autoreview.oppo.errors import OppoConfigError
 
 
 class FakeOppoWorkflowAgent:
     def __init__(self):
         self.status_version_code = None
         self.list_created_apps_call = None
+        self.submit_call = None
+        self.ensure_app_created_call = None
 
     def status(self, version_code=None):
         self.status_version_code = version_code
@@ -56,6 +59,43 @@ class FakeOppoWorkflowAgent:
             "missing_required_fields": ["apk_url"],
             "missing_files": ["release/app.apk"],
         }
+
+    def ensure_app_created(self):
+        self.ensure_app_created_call = True
+        return {
+            "app_id": "30472919",
+            "app_name": "小学四年级英语",
+            "pkg_name": "com.pelbs.book43",
+            "app_create_time": "2021-02-08 22:48:13",
+        }
+
+    def submit(self, *, wait_task=False, wait_review=False, force=False):
+        self.submit_call = {
+            "wait_task": wait_task,
+            "wait_review": wait_review,
+            "force": force,
+        }
+        return {
+            "release": {"task_id": "task-1"},
+            "pkg_name": "com.pelbs.book43",
+            "version_code": "68",
+            "app_info": self.ensure_app_created(),
+        }
+
+
+class FakeReadyOppoWorkflowAgent(FakeOppoWorkflowAgent):
+    def validate(self):
+        return {
+            "valid": True,
+            "missing_required_fields": [],
+            "missing_files": [],
+        }
+
+
+class FakeMissingRemoteAppWorkflowAgent(FakeReadyOppoWorkflowAgent):
+    def ensure_app_created(self):
+        self.ensure_app_created_call = True
+        raise OppoConfigError("OPPO 当前开发者账号下未确认创建应用：com.example.app")
 
 
 class FakeMarketSearcher:
@@ -918,6 +958,95 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIn("配置文件：不通过", response.text)
             self.assertIn("缺字段：apk_url", response.text)
             self.assertIn("不建议原包直接重提", response.text)
+
+    def test_submission_check_blocks_when_remote_app_is_not_confirmed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_agent = FakeMissingRemoteAppWorkflowAgent()
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                oppo_agent_factory=lambda: fake_agent,
+            )
+
+            response = agent.handle_message("chat-1", "提交检查")
+
+            self.assertTrue(fake_agent.ensure_app_created_call)
+            self.assertIn("OPPO 应用：未确认创建", response.text)
+            self.assertIn("结论：先补齐缺口或处理风险，再提交。", response.text)
+
+    def test_prepare_submit_does_not_upload_without_confirmation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_agent = FakeReadyOppoWorkflowAgent()
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                oppo_agent_factory=lambda: fake_agent,
+            )
+
+            response = agent.handle_message("chat-1", "准备提交", "user-1")
+
+            self.assertIsNone(fake_agent.submit_call)
+            self.assertIn("OPPO 自动提审未执行", response.text)
+            self.assertIn("确认提审 OPPO", response.text)
+
+    def test_confirm_oppo_submit_calls_submit_tool(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_agent = FakeReadyOppoWorkflowAgent()
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                oppo_agent_factory=lambda: fake_agent,
+            )
+
+            response = agent.handle_message("chat-1", "确认提审 OPPO", "user-1")
+
+            self.assertEqual(fake_agent.submit_call, {"wait_task": True, "wait_review": False, "force": False})
+            self.assertEqual(response.data["intent"], "oppo_submit")
+            self.assertEqual(response.data["confirmed"], True)
+            self.assertIn("OPPO 自动提审", response.text)
+            self.assertIn("状态：接口已接收", response.text)
+
+    def test_format_oppo_submit_result_shows_failed_task_error(self):
+        text = ReviewAgent._format_oppo_submit_result(
+            {
+                "release": {"task_id": "task-1"},
+                "pkg_name": "com.pelbs.book43",
+                "version_code": "34",
+                "task": {
+                    "task_state": "3",
+                    "err_msg": "您上传的apk包体存在targetsdkversion30以下版本，请尽快更新后重新上传。",
+                },
+            }
+        )
+
+        self.assertIn("状态：任务失败", text)
+        self.assertIn("任务错误：您上传的apk包体存在targetsdkversion30以下版本", text)
+
+    def test_format_oppo_status_shows_failed_task_error(self):
+        text = ReviewAgent._format_oppo_status(
+            {
+                "pkg_name": "com.pelbs.book43",
+                "version_code": "34",
+                "review_state": "reviewing",
+                "app_info": {"audit_status_name": "未发布"},
+                "task": {
+                    "task_state": "3",
+                    "err_msg": "您上传的apk包体存在targetsdkversion30以下版本，请尽快更新后重新上传。",
+                },
+            }
+        )
+
+        self.assertIn("提交任务：任务失败", text)
+        self.assertIn("任务错误：您上传的apk包体存在targetsdkversion30以下版本", text)
+
+    def test_oppo_submit_material_request_is_not_treated_as_confirmation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_agent = FakeReadyOppoWorkflowAgent()
+            agent = ReviewAgent(
+                JsonStateStore(Path(temp_dir) / "state.json"),
+                oppo_agent_factory=lambda: fake_agent,
+            )
+
+            agent.handle_message("chat-1", "我要提审 OPPO 的材料，不要荣耀的材料", "user-1")
+
+            self.assertIsNone(fake_agent.submit_call)
 
     def test_market_search_records_last_result(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2297,6 +2426,106 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertEqual(after["submission"]["pkg_name"], "com.pelbs.book1067")
             self.assertIn("八年级语文下册软著.png", after["submission"]["copyright_url"]["path"])
             self.assertIn("配置已保存", confirm.text)
+
+    def test_file_move_request_is_staged_before_confirmation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            upload_path = base_dir / "uploaded.apk"
+            upload_path.write_bytes(b"apk-bytes")
+            state = JsonStateStore(base_dir / "state.json")
+            state.update_session(
+                "chat-1",
+                {
+                    "last_upload": {
+                        "path": str(upload_path),
+                        "file_name": "uploaded.apk",
+                        "resource_type": "file",
+                    }
+                },
+            )
+            agent = ReviewAgent(state, oppo_config_path=config_path)
+
+            stage = agent.handle_message("chat-1", "把这个apk放到项目根目录下的realse里面")
+            target = base_dir / "release" / "uploaded.apk"
+            session = agent.state_store.get_session("chat-1")
+
+            self.assertIn("文件操作已暂存", stage.text)
+            self.assertIn("确认移动文件", stage.text)
+            self.assertFalse(target.exists())
+            self.assertEqual(Path(session["pending_file_move"]["target_path"]), target)
+            self.assertEqual(session["pending_file_move"]["operation"], "copy")
+
+            confirm = agent.handle_message("chat-1", "确认移动文件")
+
+            self.assertIn("文件操作已完成", confirm.text)
+            self.assertEqual(target.read_bytes(), b"apk-bytes")
+            self.assertTrue(upload_path.exists())
+            self.assertEqual(agent.state_store.get_session("chat-1").get("pending_file_move"), {})
+
+    def test_file_move_can_use_latest_packaged_apk(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            apk_path = base_dir / "build" / "latest.apk"
+            apk_path.parent.mkdir()
+            apk_path.write_bytes(b"latest-apk")
+            state = JsonStateStore(base_dir / "state.json")
+            state.update_session(
+                "chat-1",
+                {
+                    "last_package_result": {
+                        "latest_apks": [str(apk_path)],
+                        "resolved_package": {
+                            "app_name": "四年级英语下册",
+                            "pkg_name": "com.pelbs.book1017",
+                            "channel": "xm1017",
+                        },
+                    }
+                },
+            )
+            agent = ReviewAgent(state, oppo_config_path=config_path)
+
+            stage = agent.handle_message("chat-1", "把这个apk放到项目根目录下的release里面")
+            confirm = agent.handle_message("chat-1", "确认移动文件")
+            target = base_dir / "release" / "latest.apk"
+
+            self.assertIn(str(apk_path), stage.text)
+            self.assertIn("文件操作已完成", confirm.text)
+            self.assertEqual(target.read_bytes(), b"latest-apk")
+
+    def test_llm_file_move_misroute_is_normalized_to_stage_file_move(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            upload_path = base_dir / "uploaded.apk"
+            upload_path.write_bytes(b"apk-bytes")
+            state = JsonStateStore(base_dir / "state.json")
+            state.update_session(
+                "chat-1",
+                {
+                    "last_upload": {
+                        "path": str(upload_path),
+                        "file_name": "uploaded.apk",
+                        "resource_type": "file",
+                    }
+                },
+            )
+            llm = FakeLlmClient(
+                tool_call={
+                    "tool": "stage_config_update",
+                    "confidence": 0.9,
+                    "arguments": {"config_assignment": "file_move.safe_intent=true"},
+                }
+            )
+            agent = ReviewAgent(state, oppo_config_path=config_path, llm_client=llm)
+
+            response = agent.handle_message("chat-1", "把这个apk放到项目根目录下的release里面")
+
+            self.assertIn("文件操作已暂存", response.text)
+            self.assertEqual(response.data["tool_call"]["tool"], "stage_file_move")
+            session = agent.state_store.get_session("chat-1")
+            self.assertIn("pending_file_move", session)
 
     def test_bind_last_upload_as_apk_copies_file_and_updates_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:

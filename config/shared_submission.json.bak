@@ -1,0 +1,43 @@
+{
+  "submission": {
+    "pkg_name": "com.pelbs.book43",
+    "version_code": "34",
+    "version_name": "3.43.2.3",
+    "apk_url": {
+      "path": "D:\\AutoReview\\release\\app-release.apk",
+      "cpu_code": 0
+    },
+    "app_name": "小学四年级英语",
+    "second_category_id": "6761",
+    "third_category_id": "6670",
+    "summary": "英语四级单词学习工具",
+    "detail_desc": "专业英语四级单词学习应用，提供听力、跟读、记忆训练等功能。",
+    "update_desc": "版本 3.43.2.3 - 优化单词记忆功能。",
+    "privacy_source_url": "https://example.com/privacy.html",
+    "icon_url": {
+      "path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\四年级\\下册\\icons\\android\\playstore-icon.png"
+    },
+    "pic_url": [
+      {
+        "path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\四年级\\下册\\截图\\1080x1920\\微信图片_202105291816521.jpg"
+      },
+      {
+        "path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\四年级\\下册\\截图\\1080x1920\\微信图片_202105291816522.jpg"
+      },
+      {
+        "path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\四年级\\下册\\截图\\1080x1920\\微信图片_202105291816523.jpg"
+      },
+      {
+        "path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\四年级\\下册\\截图\\1080x1920\\微信图片_202105291816524.jpg"
+      }
+    ],
+    "online_type": "1",
+    "test_desc": "测试账号、测试步骤或不需要登录的说明。",
+    "copyright_url": "https://store.heytapimage.com/img/202102/08/faa90f2ad3901cd4ad35b7c9277032b9.png",
+    "business_username": "张三",
+    "business_email": "developer@example.com",
+    "business_mobile": "13800000000",
+    "age_level": "3",
+    "adaptive_equipment": "4"
+  }
+}

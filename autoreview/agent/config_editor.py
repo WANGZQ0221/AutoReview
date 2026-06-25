@@ -72,6 +72,10 @@ PACKAGING_FIELDS = {
     "skip_start",
 }
 
+SHARED_SUBMISSION_LOCAL_ONLY_FIELDS = {
+    "last_rejection_reason",
+}
+
 
 class ConfigEditError(ValueError):
     pass
@@ -124,19 +128,27 @@ def apply_config_patch_to_targets(
     packaging_config_path: str | Path | None = None,
 ) -> JsonDict:
     _validate_flat_patch(patch)
+    main_config = Path(main_config_path)
+    main_raw = _read_config(main_config)
+    shared_submission_path = _shared_submission_config_path(main_raw, main_config)
     main_patch: JsonDict = {}
+    shared_submission_patch: JsonDict = {}
     packaging_patch: JsonDict = {}
     for dotted_path, value in patch.items():
         if dotted_path.startswith("packaging."):
             packaging_patch[dotted_path] = value
+        elif _should_write_submission_to_shared(dotted_path, main_raw, shared_submission_path):
+            shared_submission_patch[dotted_path] = value
         else:
             main_patch[dotted_path] = value
 
     results: list[JsonDict] = []
     if main_patch:
-        results.append(apply_config_patch_to_file(main_config_path, main_patch))
+        results.append(apply_config_patch_to_file(main_config, main_patch))
+    if shared_submission_patch and shared_submission_path:
+        results.append(apply_config_patch_to_file(shared_submission_path, shared_submission_patch))
     if packaging_patch:
-        target = Path(packaging_config_path) if packaging_config_path else Path(main_config_path).parent / "packaging.json"
+        target = Path(packaging_config_path) if packaging_config_path else main_config.parent / "packaging.json"
         if not target.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text('{\n  "packaging": {}\n}\n', encoding="utf-8")
@@ -146,6 +158,46 @@ def apply_config_patch_to_targets(
         "results": results,
         "patch": patch,
     }
+
+
+def _shared_submission_config_path(raw: JsonDict, main_config_path: Path) -> Path | None:
+    shared_path_value = raw.get("shared_submission_path") or raw.get("submission_config_path")
+    if not shared_path_value:
+        return None
+    path = Path(str(shared_path_value))
+    if not path.is_absolute():
+        path = main_config_path.parent / path
+    return path
+
+
+def _should_write_submission_to_shared(
+    dotted_path: str,
+    main_raw: JsonDict,
+    shared_submission_path: Path | None,
+) -> bool:
+    if not shared_submission_path or not dotted_path.startswith("submission."):
+        return False
+    parts = dotted_path.split(".")
+    if len(parts) < 2 or parts[1] in SHARED_SUBMISSION_LOCAL_ONLY_FIELDS:
+        return False
+    return not _has_dotted_path(main_raw, dotted_path)
+
+
+def _has_dotted_path(target: Any, dotted_path: str) -> bool:
+    cursor = target
+    for part in dotted_path.split("."):
+        if part.isdigit():
+            if not isinstance(cursor, list):
+                return False
+            index = int(part)
+            if index >= len(cursor):
+                return False
+            cursor = cursor[index]
+            continue
+        if not isinstance(cursor, dict) or part not in cursor:
+            return False
+        cursor = cursor[part]
+    return True
 
 
 def format_config_summary(config_path: str | Path) -> str:
@@ -338,12 +390,19 @@ def _set_dotted_path(target: Any, path: str, value: Any) -> None:
                 raise ConfigEditError(f"字段路径无法写入列表：{path}")
             while len(cursor) <= list_index:
                 cursor.append({} if not next_part.isdigit() else [])
+            expected_container = [] if next_part.isdigit() else {}
+            if not isinstance(cursor[list_index], type(expected_container)):
+                cursor[list_index] = expected_container
             cursor = cursor[list_index]
             continue
         if not isinstance(cursor, dict):
             raise ConfigEditError(f"字段路径无法写入对象：{path}")
         if part not in cursor or cursor[part] is None:
             cursor[part] = [] if next_part.isdigit() else {}
+        else:
+            expected_container = [] if next_part.isdigit() else {}
+            if not isinstance(cursor[part], type(expected_container)):
+                cursor[part] = expected_container
         cursor = cursor[part]
 
     leaf = parts[-1]

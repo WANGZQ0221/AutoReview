@@ -1,0 +1,1715 @@
+{
+  "ok": true,
+  "result": [
+    {
+      "sheet": "CfgGameConfig",
+      "row": 4,
+      "channel": "xm1000",
+      "app_name": "一年级英语上册",
+      "pkg_name": "com.pelbs.book1000",
+      "version_code": "68",
+      "version_name": "3.1000.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\一年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 5,
+      "channel": "xm1001",
+      "app_name": "二年级英语上册",
+      "pkg_name": "com.pelbs.book1001",
+      "version_code": "68",
+      "version_name": "3.1001.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\二年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 6,
+      "channel": "xm1002",
+      "app_name": "三年级英语上册",
+      "pkg_name": "com.pelbs.book1002",
+      "version_code": "68",
+      "version_name": "3.1002.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\三年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 7,
+      "channel": "xm1003",
+      "app_name": "四年级英语上册",
+      "pkg_name": "com.pelbs.book1003",
+      "version_code": "68",
+      "version_name": "3.1003.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\四年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 8,
+      "channel": "xm1004",
+      "app_name": "五年级英语上册",
+      "pkg_name": "com.pelbs.book1004",
+      "version_code": "68",
+      "version_name": "3.1004.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\五年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 9,
+      "channel": "xm1005",
+      "app_name": "六年级英语上册",
+      "pkg_name": "com.pelbs.book1005",
+      "version_code": "68",
+      "version_name": "3.1005.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\六年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 10,
+      "channel": "xm1010",
+      "app_name": "一年级英语点读",
+      "pkg_name": "com.pelbs.book1010",
+      "version_code": "68",
+      "version_name": "3.1010.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\一年级\\一年级英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 11,
+      "channel": "xm1012",
+      "app_name": "二年级英语点读",
+      "pkg_name": "com.pelbs.book1012",
+      "version_code": "68",
+      "version_name": "3.1012.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\二年级\\二年级英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 12,
+      "channel": "xm1014",
+      "app_name": "三年级英语点读",
+      "pkg_name": "com.pelbs.book1014",
+      "version_code": "68",
+      "version_name": "3.1014.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\三年级\\三年级英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 13,
+      "channel": "xm1015",
+      "app_name": "三年级英语下册",
+      "pkg_name": "com.pelbs.book1015",
+      "version_code": "68",
+      "version_name": "3.1015.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\三年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 14,
+      "channel": "xm1016",
+      "app_name": "四年级英语点读",
+      "pkg_name": "com.pelbs.book1016",
+      "version_code": "68",
+      "version_name": "3.1016.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\四年级\\四年级英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 15,
+      "channel": "xm1017",
+      "app_name": "四年级英语下册",
+      "pkg_name": "com.pelbs.book1017",
+      "version_code": "68",
+      "version_name": "3.1017.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\四年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 16,
+      "channel": "xm1018",
+      "app_name": "五年级英语点读",
+      "pkg_name": "com.pelbs.book1018",
+      "version_code": "68",
+      "version_name": "3.1018.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\五年级\\五年级英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 17,
+      "channel": "xm1019",
+      "app_name": "五年级英语下册",
+      "pkg_name": "com.pelbs.book1019",
+      "version_code": "68",
+      "version_name": "3.1019.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\五年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 18,
+      "channel": "xm1020",
+      "app_name": "六年级英语点读",
+      "pkg_name": "com.pelbs.book1020",
+      "version_code": "68",
+      "version_name": "3.1020.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\六年级\\六年级英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 19,
+      "channel": "xm1021",
+      "app_name": "六年级英语下册",
+      "pkg_name": "com.pelbs.book1021",
+      "version_code": "68",
+      "version_name": "3.1021.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\六年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 20,
+      "channel": "xm1058",
+      "app_name": "七年级英语上册",
+      "pkg_name": "com.pelbs.book1058",
+      "version_code": "68",
+      "version_name": "3.1058.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\七年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 21,
+      "channel": "xm1059",
+      "app_name": "七年级英语下册",
+      "pkg_name": "com.pelbs.book1059",
+      "version_code": "68",
+      "version_name": "3.1059.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\七年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 22,
+      "channel": "xm1060",
+      "app_name": "八年级英语上册",
+      "pkg_name": "com.pelbs.book1060",
+      "version_code": "68",
+      "version_name": "3.1060.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\八年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 23,
+      "channel": "xm1061",
+      "app_name": "八年级英语下册",
+      "pkg_name": "com.pelbs.book1061",
+      "version_code": "68",
+      "version_name": "3.1061.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\八年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 24,
+      "channel": "xm1062",
+      "app_name": "九年级英语上册",
+      "pkg_name": "com.pelbs.book1062",
+      "version_code": "68",
+      "version_name": "3.1062.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\九年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 25,
+      "channel": "xm1063",
+      "app_name": "九年级英语下册",
+      "pkg_name": "com.pelbs.book1063",
+      "version_code": "68",
+      "version_name": "3.1063.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\九年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 26,
+      "channel": "xm1100",
+      "app_name": "高一英语点读",
+      "pkg_name": "com.pelbs.book1100",
+      "version_code": "68",
+      "version_name": "3.1100.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\高中\\高中英语\\高一英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 27,
+      "channel": "xm1101",
+      "app_name": "高二英语点读",
+      "pkg_name": "com.pelbs.book1101",
+      "version_code": "68",
+      "version_name": "3.1101.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\高中\\高中英语\\高二英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 28,
+      "channel": "xm1102",
+      "app_name": "高三英语点读",
+      "pkg_name": "com.pelbs.book1102",
+      "version_code": "68",
+      "version_name": "3.1102.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\高中\\高中英语\\高三英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 29,
+      "channel": "xm1046",
+      "app_name": "一年级数学上册",
+      "pkg_name": "com.pelbs.book1046",
+      "version_code": "68",
+      "version_name": "3.1046.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\一年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 30,
+      "channel": "xm1047",
+      "app_name": "一年级数学下册",
+      "pkg_name": "com.pelbs.book1047",
+      "version_code": "68",
+      "version_name": "3.1047.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\一年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 31,
+      "channel": "xm1048",
+      "app_name": "二年级数学上册",
+      "pkg_name": "com.pelbs.book1048",
+      "version_code": "68",
+      "version_name": "3.1048.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\二年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 32,
+      "channel": "xm1049",
+      "app_name": "二年级数学下册",
+      "pkg_name": "com.pelbs.book1049",
+      "version_code": "68",
+      "version_name": "3.1049.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\二年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 33,
+      "channel": "xm1050",
+      "app_name": "小学三年级数学上册",
+      "pkg_name": "com.pelbs.book1050",
+      "version_code": "68",
+      "version_name": "3.1050.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\三年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 34,
+      "channel": "xm1051",
+      "app_name": "三年级数学下册",
+      "pkg_name": "com.pelbs.book1051",
+      "version_code": "68",
+      "version_name": "3.1051.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\三年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 35,
+      "channel": "xm1052",
+      "app_name": "四年级数学上册",
+      "pkg_name": "com.pelbs.book1052",
+      "version_code": "68",
+      "version_name": "3.1052.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\四年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 36,
+      "channel": "xm1053",
+      "app_name": "四年级数学下册",
+      "pkg_name": "com.pelbs.book1053",
+      "version_code": "68",
+      "version_name": "3.1053.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\四年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 37,
+      "channel": "xm1054",
+      "app_name": "五年级数学上册",
+      "pkg_name": "com.pelbs.book1054",
+      "version_code": "68",
+      "version_name": "3.1054.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\五年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 38,
+      "channel": "xm1055",
+      "app_name": "五年级数学下册",
+      "pkg_name": "com.pelbs.book1055",
+      "version_code": "68",
+      "version_name": "3.1055.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\五年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 39,
+      "channel": "xm1056",
+      "app_name": "六年级数学上册",
+      "pkg_name": "com.pelbs.book1056",
+      "version_code": "68",
+      "version_name": "3.1056.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\六年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 40,
+      "channel": "xm1057",
+      "app_name": "小学六年级数学下册智趣",
+      "pkg_name": "com.pelbs.book1057",
+      "version_code": "68",
+      "version_name": "3.1057.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\六年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 41,
+      "channel": "xm1034",
+      "app_name": "小学一年级语文上册",
+      "pkg_name": "com.pelbs.book1034",
+      "version_code": "68",
+      "version_name": "3.1034.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\一年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 42,
+      "channel": "xm1035",
+      "app_name": "一年级语文下册",
+      "pkg_name": "com.pelbs.book1035",
+      "version_code": "68",
+      "version_name": "3.1035.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\一年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 43,
+      "channel": "xm1036",
+      "app_name": "小学二年级语文上册",
+      "pkg_name": "com.pelbs.book1036",
+      "version_code": "68",
+      "version_name": "3.1036.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\二年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 44,
+      "channel": "xm1037",
+      "app_name": "二年级语文下册",
+      "pkg_name": "com.pelbs.book1037",
+      "version_code": "68",
+      "version_name": "3.1037.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\二年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 45,
+      "channel": "xm1038",
+      "app_name": "三年级语文上册",
+      "pkg_name": "com.pelbs.book1038",
+      "version_code": "68",
+      "version_name": "3.1038.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\三年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 46,
+      "channel": "xm1039",
+      "app_name": "三年级语文下册",
+      "pkg_name": "com.pelbs.book1039",
+      "version_code": "68",
+      "version_name": "3.1039.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\三年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 47,
+      "channel": "xm1040",
+      "app_name": "四年级语文上册",
+      "pkg_name": "com.pelbs.book1040",
+      "version_code": "68",
+      "version_name": "3.1040.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\四年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 48,
+      "channel": "xm1041",
+      "app_name": "四年级语文下册",
+      "pkg_name": "com.pelbs.book1041",
+      "version_code": "68",
+      "version_name": "3.1041.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\四年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 49,
+      "channel": "xm1042",
+      "app_name": "五年级语文上册",
+      "pkg_name": "com.pelbs.book1042",
+      "version_code": "68",
+      "version_name": "3.1042.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\五年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 50,
+      "channel": "xm1043",
+      "app_name": "小学五年级语文下册智趣",
+      "pkg_name": "com.pelbs.book1043",
+      "version_code": "68",
+      "version_name": "3.1043.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\五年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 51,
+      "channel": "xm1044",
+      "app_name": "六年级语文上册",
+      "pkg_name": "com.pelbs.book1044",
+      "version_code": "68",
+      "version_name": "3.1044.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\六年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 52,
+      "channel": "xm1045",
+      "app_name": "六年级语文下册",
+      "pkg_name": "com.pelbs.book1045",
+      "version_code": "68",
+      "version_name": "3.1045.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\六年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 53,
+      "channel": "xm1064",
+      "app_name": "七年级语文上册",
+      "pkg_name": "com.pelbs.book1064",
+      "version_code": "68",
+      "version_name": "3.1064.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\七年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 54,
+      "channel": "xm1065",
+      "app_name": "初中七年级语文下册",
+      "pkg_name": "com.pelbs.book1065",
+      "version_code": "68",
+      "version_name": "3.1065.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\七年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 55,
+      "channel": "xm1066",
+      "app_name": "八年级语文上册",
+      "pkg_name": "com.pelbs.book1066",
+      "version_code": "68",
+      "version_name": "3.1066.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\八年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 56,
+      "channel": "xm1067",
+      "app_name": "八年级语文下册",
+      "pkg_name": "com.pelbs.book1067",
+      "version_code": "68",
+      "version_name": "3.1067.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\八年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 57,
+      "channel": "xm1068",
+      "app_name": "九年级语文上册",
+      "pkg_name": "com.pelbs.book1068",
+      "version_code": "68",
+      "version_name": "3.1068.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\九年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 58,
+      "channel": "xm1069",
+      "app_name": "九年级语文下册",
+      "pkg_name": "com.pelbs.book1069",
+      "version_code": "68",
+      "version_name": "3.1069.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\九年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 59,
+      "channel": "xm1076",
+      "app_name": "小学语文同步",
+      "pkg_name": "com.pelbs.book1076",
+      "version_code": "68",
+      "version_name": "3.1076.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小学\\小学语文同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 60,
+      "channel": "xm1077",
+      "app_name": "小学数学同步",
+      "pkg_name": "com.pelbs.book1077",
+      "version_code": "68",
+      "version_name": "3.1077.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小学\\小学数学同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 61,
+      "channel": "xm1078",
+      "app_name": "小学英语同步",
+      "pkg_name": "com.pelbs.book1078",
+      "version_code": "68",
+      "version_name": "3.1078.34.1",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小学\\小学英语同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 62,
+      "channel": "xm1079",
+      "app_name": "初中语文同步",
+      "pkg_name": "com.pelbs.book1079",
+      "version_code": "68",
+      "version_name": "3.1079.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\初中\\初中语文同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 63,
+      "channel": "xm1080",
+      "app_name": "初中数学同步",
+      "pkg_name": "com.pelbs.book1080",
+      "version_code": "68",
+      "version_name": "3.1080.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\初中\\初中数学同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 64,
+      "channel": "xm1081",
+      "app_name": "初中英语同步",
+      "pkg_name": "com.pelbs.book1081",
+      "version_code": "68",
+      "version_name": "3.1081.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\初中\\初中英语同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 65,
+      "channel": "xm1082",
+      "app_name": "高中语文同步",
+      "pkg_name": "com.pelbs.book1082",
+      "version_code": "68",
+      "version_name": "3.1082.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\高中\\高中语文同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 66,
+      "channel": "xm1083",
+      "app_name": "高中数学同步",
+      "pkg_name": "com.pelbs.book1083",
+      "version_code": "68",
+      "version_name": "3.1083.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\高中\\高中数学同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 67,
+      "channel": "xm1084",
+      "app_name": "高中英语同步",
+      "pkg_name": "com.pelbs.book1084",
+      "version_code": "68",
+      "version_name": "3.1084.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\高中\\高中英语\\高中英语同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 68,
+      "channel": "xm1090",
+      "app_name": "中小学智慧云",
+      "pkg_name": "com.pelbs.book1090",
+      "version_code": "68",
+      "version_name": "3.1090.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\智慧云\\中小学智慧云92\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 69,
+      "channel": "xm1091",
+      "app_name": "智慧中小学",
+      "pkg_name": "com.pelbs.book1091",
+      "version_code": "68",
+      "version_name": "3.1091.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\智慧云\\智慧中小学93\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 70,
+      "channel": "xm1092",
+      "app_name": "中小学智慧云",
+      "pkg_name": "com.pelbs.book1092",
+      "version_code": "68",
+      "version_name": "3.1092.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\智慧云\\中小学云平台94\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 72,
+      "channel": "xm1094",
+      "app_name": "智趣点读",
+      "pkg_name": "com.pelbs.book1094",
+      "version_code": "68",
+      "version_name": "3.1094.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\智趣点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 73,
+      "channel": "xm1200",
+      "app_name": "冀教英语点读",
+      "pkg_name": "com.pelbs.book1200",
+      "version_code": "68",
+      "version_name": "3.1200.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\冀教英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 74,
+      "channel": "xm1201",
+      "app_name": "湘少英语点读",
+      "pkg_name": "com.pelbs.book1201",
+      "version_code": "68",
+      "version_name": "3.1201.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\湘少英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 75,
+      "channel": "xm1202",
+      "app_name": "闽教英语点读",
+      "pkg_name": "com.pelbs.book1202",
+      "version_code": "68",
+      "version_name": "3.1202.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\闽教英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 76,
+      "channel": "xm1203",
+      "app_name": "湘鲁英语点读",
+      "pkg_name": "com.pelbs.book1203",
+      "version_code": "68",
+      "version_name": "3.1203.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\湘鲁英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 77,
+      "channel": "xm1204",
+      "app_name": "鲁科英语点读",
+      "pkg_name": "com.pelbs.book1204",
+      "version_code": "68",
+      "version_name": "3.1204.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\鲁科英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 78,
+      "channel": "xm1205",
+      "app_name": "科普英语点读",
+      "pkg_name": "com.pelbs.book1205",
+      "version_code": "68",
+      "version_name": "3.1205.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\科普英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 79,
+      "channel": "xm1206",
+      "app_name": "粤教英语点读",
+      "pkg_name": "com.pelbs.book1206",
+      "version_code": "68",
+      "version_name": "3.1206.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\粤教英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 80,
+      "channel": "xm1207",
+      "app_name": "陕旅英语点读",
+      "pkg_name": "com.pelbs.book1207",
+      "version_code": "68",
+      "version_name": "3.1207.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\陕旅英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 81,
+      "channel": "xm1208",
+      "app_name": "科教英语点读",
+      "pkg_name": "com.pelbs.book1208",
+      "version_code": "68",
+      "version_name": "3.1208.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\教科英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 82,
+      "channel": "xm1209",
+      "app_name": "北师大英语点读",
+      "pkg_name": "com.pelbs.book1209",
+      "version_code": "68",
+      "version_name": "3.1209.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\北师大英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 83,
+      "channel": "xm1210",
+      "app_name": "朗文英语点读",
+      "pkg_name": "com.pelbs.book1210",
+      "version_code": "68",
+      "version_name": "3.1210.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\朗文英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 84,
+      "channel": "xm1211",
+      "app_name": "川教英语点读",
+      "pkg_name": "com.pelbs.book1211",
+      "version_code": "68",
+      "version_name": "3.1211.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\川教英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 85,
+      "channel": "xm1212",
+      "app_name": "北京英语点读",
+      "pkg_name": "com.pelbs.book1212",
+      "version_code": "68",
+      "version_name": "3.1212.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\北京英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 86,
+      "channel": "xm1213",
+      "app_name": "重大英语点读",
+      "pkg_name": "com.pelbs.book1213",
+      "version_code": "68",
+      "version_name": "3.1213.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\重大英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 87,
+      "channel": "xm1214",
+      "app_name": "辽师大英语点读",
+      "pkg_name": "com.pelbs.book1214",
+      "version_code": "68",
+      "version_name": "3.1214.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\辽师大英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 88,
+      "channel": "xm1215",
+      "app_name": "清华英语点读",
+      "pkg_name": "com.pelbs.book1215",
+      "version_code": "68",
+      "version_name": "3.1215.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\清华英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 89,
+      "channel": "xm1216",
+      "app_name": "牛津英语点读",
+      "pkg_name": "com.pelbs.book1216",
+      "version_code": "68",
+      "version_name": "3.1216.38.2",
+      "res_path": ""
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 90,
+      "channel": "xm1217",
+      "app_name": "沪教英语点读",
+      "pkg_name": "com.pelbs.book1217",
+      "version_code": "68",
+      "version_name": "3.1217.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\沪教英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 91,
+      "channel": "xm1218",
+      "app_name": "接力英语点读",
+      "pkg_name": "com.pelbs.book1218",
+      "version_code": "68",
+      "version_name": "3.1218.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\接力英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 92,
+      "channel": "xm1220",
+      "app_name": "人教英语点读",
+      "pkg_name": "com.pelbs.book1220",
+      "version_code": "68",
+      "version_name": "3.1220.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\人教英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 93,
+      "channel": "xm1221",
+      "app_name": "外研社英语点读",
+      "pkg_name": "com.pelbs.book1221",
+      "version_code": "68",
+      "version_name": "3.1221.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\外研社英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 94,
+      "channel": "xm1006",
+      "app_name": "译林英语点读",
+      "pkg_name": "com.yilinenglish.bookca",
+      "version_code": "68",
+      "version_name": "3.1006.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\译林\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 95,
+      "channel": "xm2001",
+      "app_name": "少儿编程入门",
+      "pkg_name": "com.pelbs.book2001",
+      "version_code": "68",
+      "version_name": "3.2001.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\素质教育\\少儿编程\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 96,
+      "channel": "xm2002",
+      "app_name": "眼保健操",
+      "pkg_name": "com.pelbs.book2002",
+      "version_code": "68",
+      "version_name": "3.2002.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\素质教育\\眼保健操\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 97,
+      "channel": "xm2003",
+      "app_name": "格林童话绘本点读",
+      "pkg_name": "com.pelbs.book2003",
+      "version_code": "68",
+      "version_name": "3.2003.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\素质教育\\格林童话绘本点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 98,
+      "channel": "xm2004",
+      "app_name": "安徒生绘本童话",
+      "pkg_name": "com.pelbs.book2004",
+      "version_code": "68",
+      "version_name": "3.2004.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\素质教育\\安徒生童话绘本点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 99,
+      "channel": "xm2005",
+      "app_name": "传统神话绘本点读",
+      "pkg_name": "com.pelbs.book2005",
+      "version_code": "68",
+      "version_name": "3.2005.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\素质教育\\传统神话绘本点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 100,
+      "channel": "xm2006",
+      "app_name": "历史故事绘本点读",
+      "pkg_name": "com.pelbs.book2006",
+      "version_code": "68",
+      "version_name": "3.2006.38.2",
+      "res_path": ""
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 101,
+      "channel": "xm2007",
+      "app_name": "成语故事绘本点读",
+      "pkg_name": "com.pelbs.book2007",
+      "version_code": "68",
+      "version_name": "3.2007.38.2",
+      "res_path": ""
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 104,
+      "channel": "xm1400",
+      "app_name": "英语四级单词",
+      "pkg_name": "com.pelbs.book1400",
+      "version_code": "68",
+      "version_name": "3.1400.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\大学英语\\四级英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 105,
+      "channel": "xm1085",
+      "app_name": "小学英语点读",
+      "pkg_name": "com.pelbs.book1085",
+      "version_code": "68",
+      "version_name": "3.1085.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小学\\小学英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 106,
+      "channel": "xm1086",
+      "app_name": "小学英语单词",
+      "pkg_name": "com.pelbs.book1086",
+      "version_code": "68",
+      "version_name": "3.1086.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小学\\小学英语单词\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 107,
+      "channel": "xm1088",
+      "app_name": "初中英语点读",
+      "pkg_name": "com.pelbs.book1088",
+      "version_code": "68",
+      "version_name": "3.1088.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\初中\\初中英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 108,
+      "channel": "xm1106",
+      "app_name": "单词速记",
+      "pkg_name": "com.pelbs.book1106",
+      "version_code": "68",
+      "version_name": "3.1106.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\单词速记\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 109,
+      "channel": "xm1401",
+      "app_name": "英语六级单词",
+      "pkg_name": "com.pelbs.book1401",
+      "version_code": "68",
+      "version_name": "3.1401.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\大学英语\\六级英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 110,
+      "channel": "xm1110",
+      "app_name": "七年级英语点读",
+      "pkg_name": "com.pelbs.book1110",
+      "version_code": "68",
+      "version_name": "3.1110.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\七年级\\七年级英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 111,
+      "channel": "xm1111",
+      "app_name": "八年级英语点读",
+      "pkg_name": "com.pelbs.book1111",
+      "version_code": "68",
+      "version_name": "3.1111.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\八年级\\八年级绘本点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 112,
+      "channel": "xm1112",
+      "app_name": "九年级英语点读",
+      "pkg_name": "com.pelbs.book1112",
+      "version_code": "68",
+      "version_name": "3.1112.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\九年级\\九年级英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 113,
+      "channel": "xm2013",
+      "app_name": "自然拼读",
+      "pkg_name": "com.pelbs.book2013",
+      "version_code": "68",
+      "version_name": "3.2013.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\自然拼读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 114,
+      "channel": "xm2012",
+      "app_name": "英语点读学习",
+      "pkg_name": "com.pelbs.book2012",
+      "version_code": "68",
+      "version_name": "3.2012.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\英语点读学习宝\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 115,
+      "channel": "xm1120",
+      "app_name": "小学语文",
+      "pkg_name": "com.pelbs.book1120",
+      "version_code": "68",
+      "version_name": "3.1120.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小学\\小学语文\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 116,
+      "channel": "xm1121",
+      "app_name": "小学数学",
+      "pkg_name": "com.pelbs.book1121",
+      "version_code": "68",
+      "version_name": "3.1121.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小学\\小学数学\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 117,
+      "channel": "xm1122",
+      "app_name": "小学英语",
+      "pkg_name": "com.pelbs.book1122",
+      "version_code": "68",
+      "version_name": "3.1122.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小学\\小学英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 118,
+      "channel": "xm1123",
+      "app_name": "初中语文",
+      "pkg_name": "com.pelbs.book1123",
+      "version_code": "68",
+      "version_name": "3.1123.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\初中\\初中语文\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 119,
+      "channel": "xm1124",
+      "app_name": "初中数学",
+      "pkg_name": "com.pelbs.book1124",
+      "version_code": "68",
+      "version_name": "3.1124.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\初中\\初中数学\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 120,
+      "channel": "xm1125",
+      "app_name": "初中英语",
+      "pkg_name": "com.pelbs.book1125",
+      "version_code": "68",
+      "version_name": "3.1125.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\初中\\初中英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 121,
+      "channel": "xm1113",
+      "app_name": "小升初英语",
+      "pkg_name": "com.pelbs.book1113",
+      "version_code": "68",
+      "version_name": "3.1113.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小升初\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 122,
+      "channel": "xm1105",
+      "app_name": "PEP英语单词",
+      "pkg_name": "com.pelbs.book1105",
+      "version_code": "68",
+      "version_name": "3.1105.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\PEP英语单词\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 123,
+      "channel": "xm1223",
+      "app_name": "PEP英语点读",
+      "pkg_name": "com.pelbs.book1223",
+      "version_code": "68",
+      "version_name": "3.1223.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\PEP英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 124,
+      "channel": "xm1114",
+      "app_name": "专升本英语点读",
+      "pkg_name": "com.pelbs.book1114",
+      "version_code": "68",
+      "version_name": "3.1114.34.5",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\大学英语\\专升本英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 125,
+      "channel": "xm1096",
+      "app_name": "AI英语老师",
+      "pkg_name": "com.pelbs.book1096",
+      "version_code": "68",
+      "version_name": "3.1096.34.8",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\ai英语老师\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 126,
+      "channel": "xm1224",
+      "app_name": "新标准英语点读",
+      "pkg_name": "com.pelbs.book1224",
+      "version_code": "68",
+      "version_name": "3.1224.34.8",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\新标准英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 127,
+      "channel": "xm1107",
+      "app_name": "超级单词",
+      "pkg_name": "com.pelbs.book1107",
+      "version_code": "68",
+      "version_name": "3.1107.34.8",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\超级单词\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 128,
+      "channel": "xm1403",
+      "app_name": "大学英语同步",
+      "pkg_name": "com.pelbs.book1403",
+      "version_code": "68",
+      "version_name": "3.1403.34.4",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\大学英语\\大学英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 129,
+      "channel": "xm1202",
+      "app_name": "闽教英语点读",
+      "pkg_name": "zqdd.pelbs.book1202",
+      "version_code": "68",
+      "version_name": "3.11202.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\闽教英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 130,
+      "channel": "xm1201",
+      "app_name": "湘少英语点读",
+      "pkg_name": "zqdd.pelbs.book1201",
+      "version_code": "68",
+      "version_name": "3.11201.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\湘少英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 131,
+      "channel": "xm1200",
+      "app_name": "冀教英语点读",
+      "pkg_name": "zqdd.pelbs.book1200",
+      "version_code": "68",
+      "version_name": "3.11200.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\冀教英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 132,
+      "channel": "xm1006",
+      "app_name": "译林英语点读",
+      "pkg_name": "zqdd.pelbs.book1006",
+      "version_code": "68",
+      "version_name": "3.11006.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\译林\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 133,
+      "channel": "xm1213",
+      "app_name": "重大英语点读",
+      "pkg_name": "zqdd.pelbs.book1213",
+      "version_code": "68",
+      "version_name": "3.11213.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\重大英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 134,
+      "channel": "xm1221",
+      "app_name": "外研社英语点读",
+      "pkg_name": "zqdd.pelbs.book1221",
+      "version_code": "68",
+      "version_name": "3.11221.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\外研社英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 135,
+      "channel": "xm11076",
+      "app_name": "小学语文同步",
+      "pkg_name": "zqdd.pelbs.book1076",
+      "version_code": "68",
+      "version_name": "3.11076.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小学\\小学语文同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 136,
+      "channel": "xm1078",
+      "app_name": "小学英语同步",
+      "pkg_name": "zqdd.pelbs.book1078",
+      "version_code": "68",
+      "version_name": "3.11078.34.1",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\小学\\小学英语同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 137,
+      "channel": "xm11081",
+      "app_name": "初中英语同步",
+      "pkg_name": "zqdd.pelbs.book1081",
+      "version_code": "68",
+      "version_name": "3.11081.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\初中\\初中英语同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 138,
+      "channel": "xm1140",
+      "app_name": "一年级语文点读",
+      "pkg_name": "com.pelbs.book1140",
+      "version_code": "68",
+      "version_name": "3.1140.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\一年级\\一年级语文点读绘本\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 139,
+      "channel": "xm1141",
+      "app_name": "小学语文二年级",
+      "pkg_name": "com.pelbs.book1141",
+      "version_code": "68",
+      "version_name": "3.1141.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\二年级\\小学语文二年级\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 140,
+      "channel": "xm1142",
+      "app_name": "小学语文三年级",
+      "pkg_name": "com.pelbs.book1142",
+      "version_code": "68",
+      "version_name": "3.1142.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\三年级\\小学语文三年级\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 141,
+      "channel": "xm1143",
+      "app_name": "小学语文四年级",
+      "pkg_name": "com.pelbs.book1143",
+      "version_code": "68",
+      "version_name": "3.1143.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\四年级\\小学语文四年级\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 142,
+      "channel": "xm1144",
+      "app_name": "小学语文五年级",
+      "pkg_name": "com.pelbs.book1144",
+      "version_code": "68",
+      "version_name": "3.1144.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\五年级\\小学语文五年级\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 143,
+      "channel": "xm1145",
+      "app_name": "小学语文六年级",
+      "pkg_name": "com.pelbs.book1145",
+      "version_code": "68",
+      "version_name": "3.1145.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\六年级\\小学语文六年级\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 144,
+      "channel": "xm11079",
+      "app_name": "初中语文同步",
+      "pkg_name": "zqdd.pelbs.book1079",
+      "version_code": "68",
+      "version_name": "3.11079.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\同步\\初中\\初中语文同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 145,
+      "channel": "xm11223",
+      "app_name": "PEP英语点读",
+      "pkg_name": "zqdd.pelbs.book1223",
+      "version_code": "68",
+      "version_name": "3.1145.34.3",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\PEP英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 146,
+      "channel": "xm1275",
+      "app_name": "仁爱英语同步",
+      "pkg_name": "com.pelbs.book1275",
+      "version_code": "68",
+      "version_name": "3.1275.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\仁爱英语同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 147,
+      "channel": "xm1226",
+      "app_name": "凤凰英语同步",
+      "pkg_name": "com.pelbs.book1226",
+      "version_code": "68",
+      "version_name": "3.1226.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\凤凰英语同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 148,
+      "channel": "xm11051",
+      "app_name": "三年级数学下册",
+      "pkg_name": "com.pelbs.book11051",
+      "version_code": "68",
+      "version_name": "3.11051.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\三年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 149,
+      "channel": "xm11203",
+      "app_name": "湘鲁英语点读",
+      "pkg_name": "zqdd.pelbs.book1203",
+      "version_code": "68",
+      "version_name": "3.11203.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\湘鲁英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 150,
+      "channel": "xm11211",
+      "app_name": "川教英语点读",
+      "pkg_name": "zqdd.pelbs.book1211",
+      "version_code": "68",
+      "version_name": "3.11211.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\川教英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 151,
+      "channel": "xm11224",
+      "app_name": "新标准英语点读",
+      "pkg_name": "zqdd.pelbs.book1224",
+      "version_code": "68",
+      "version_name": "3.11224.34.8",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\新标准英语点读\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 152,
+      "channel": "xm11218",
+      "app_name": "接力英语点读",
+      "pkg_name": "zqdd.pelbs.book1218",
+      "version_code": "68",
+      "version_name": "3.11218.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\接力英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 153,
+      "channel": "xm11225",
+      "app_name": "仁爱英语点读",
+      "pkg_name": "zqdd.pelbs.book1225",
+      "version_code": "68",
+      "version_name": "3.11275.34.4",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\仁爱英语同步\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 154,
+      "channel": "xm11220",
+      "app_name": "人教英语点读",
+      "pkg_name": "zqdd.pelbs.book1220",
+      "version_code": "68",
+      "version_name": "3.11220.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\人教英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 155,
+      "channel": "xm11217",
+      "app_name": "沪教英语点读",
+      "pkg_name": "zqdd.pelbs.book1217",
+      "version_code": "68",
+      "version_name": "3.11217.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\沪教英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 156,
+      "channel": "xm11206",
+      "app_name": "粤教英语点读",
+      "pkg_name": "zqdd.pelbs.book1206",
+      "version_code": "68",
+      "version_name": "3.11206.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\粤教英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 157,
+      "channel": "xm11204",
+      "app_name": "鲁科英语点读",
+      "pkg_name": "zqdd.pelbs.book1204",
+      "version_code": "68",
+      "version_name": "3.11204.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\地区\\鲁科英语\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 158,
+      "channel": "xm11000",
+      "app_name": "一年级英语上册",
+      "pkg_name": "com.pelbs.book11000",
+      "version_code": "68",
+      "version_name": "3.11000.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\一年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 159,
+      "channel": "xm11045",
+      "app_name": "六年级语文下册",
+      "pkg_name": "com.pelbs.book11045",
+      "version_code": "68",
+      "version_name": "3.11045.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\六年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 160,
+      "channel": "xm11043",
+      "app_name": "五年级语文下册",
+      "pkg_name": "com.pelbs.book11043",
+      "version_code": "68",
+      "version_name": "3.11043.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\五年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 161,
+      "channel": "xm11041",
+      "app_name": "四年级语文下册",
+      "pkg_name": "com.pelbs.book11041",
+      "version_code": "68",
+      "version_name": "3.11041.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\四年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 162,
+      "channel": "xm11039",
+      "app_name": "三年级语文下册",
+      "pkg_name": "com.pelbs.book11039",
+      "version_code": "68",
+      "version_name": "3.11039.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\三年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 163,
+      "channel": "xm11002",
+      "app_name": "三年级英语上册",
+      "pkg_name": "com.pelbs.book11002",
+      "version_code": "68",
+      "version_name": "3.11002.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\三年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 164,
+      "channel": "xm11037",
+      "app_name": "二年级语文下册",
+      "pkg_name": "com.pelbs.book11037",
+      "version_code": "68",
+      "version_name": "3.11037.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\二年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 165,
+      "channel": "xm11035",
+      "app_name": "一年级语文下册",
+      "pkg_name": "com.pelbs.book11035",
+      "version_code": "68",
+      "version_name": "3.11035.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\一年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 166,
+      "channel": "xm11044",
+      "app_name": "六年级语文上册",
+      "pkg_name": "com.pelbs.book11044",
+      "version_code": "68",
+      "version_name": "3.11044.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\六年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 167,
+      "channel": "xm11042",
+      "app_name": "五年级语文上册",
+      "pkg_name": "com.pelbs.book11042",
+      "version_code": "68",
+      "version_name": "3.11042.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\五年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 168,
+      "channel": "xm11040",
+      "app_name": "四年级语文上册",
+      "pkg_name": "com.pelbs.book11040",
+      "version_code": "68",
+      "version_name": "3.11040.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\四年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 169,
+      "channel": "xm11038",
+      "app_name": "三年级语文上册",
+      "pkg_name": "com.pelbs.book11038",
+      "version_code": "68",
+      "version_name": "3.11038.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\三年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 170,
+      "channel": "xm11036",
+      "app_name": "二年级语文上册",
+      "pkg_name": "com.pelbs.book11036",
+      "version_code": "68",
+      "version_name": "3.11036.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\二年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 171,
+      "channel": "xm11034",
+      "app_name": "一年级语文上册",
+      "pkg_name": "com.pelbs.book11034",
+      "version_code": "68",
+      "version_name": "3.11034.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\语文\\一年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 172,
+      "channel": "xm11046",
+      "app_name": "一年级数学上册",
+      "pkg_name": "com.pelbs.book11046",
+      "version_code": "68",
+      "version_name": "3.11046.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\一年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 173,
+      "channel": "xm11047",
+      "app_name": "一年级数学下册",
+      "pkg_name": "com.pelbs.book11047",
+      "version_code": "68",
+      "version_name": "3.11047.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\一年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 174,
+      "channel": "xm11048",
+      "app_name": "二年级数学上册",
+      "pkg_name": "com.pelbs.book11048",
+      "version_code": "68",
+      "version_name": "3.11048.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\二年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 175,
+      "channel": "xm11049",
+      "app_name": "二年级数学下册",
+      "pkg_name": "com.pelbs.book11049",
+      "version_code": "68",
+      "version_name": "3.11049.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\二年级\\下册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 176,
+      "channel": "xm11050",
+      "app_name": "三年级数学上册",
+      "pkg_name": "com.pelbs.book11050",
+      "version_code": "68",
+      "version_name": "3.11050.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\数学\\三年级\\上册\\icons\\android"
+    },
+    {
+      "sheet": "CfgGameConfig",
+      "row": 177,
+      "channel": "xm11001",
+      "app_name": "二年级英语上册",
+      "pkg_name": "com.pelbs.book11001",
+      "version_code": "68",
+      "version_name": "3.11001.38.2",
+      "res_path": "D:\\Workship\\Pelbs\\AppMaket\\上架资源\\英语\\二年级\\上册\\icons\\android"
+    }
+  ]
+}

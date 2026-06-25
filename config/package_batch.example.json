@@ -1,7 +1,7 @@
 {
   "defaults": {
     "project_dir": "project_dir  = Android 项目目录，里面要有 packlist.xls、jksconfig.txt、app/build.gradle",
-    "script": "package.js 路径：D:/development_sercer/AutoReview/package.js",
+    "script": "package.js 路径：D:/AutoReview/package.js",
     "node_command": "Node 命令，一般填 node",
     "skip_start": "true, 表示打包结束后不执行 start.bat"
   },

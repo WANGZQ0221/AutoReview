@@ -10,6 +10,7 @@ from pathlib import Path
 from dataclasses import dataclass
 import json
 import re
+import shutil
 import time
 import uuid
 from typing import Any, Callable
@@ -74,6 +75,7 @@ HELP_TEXT = """我可以协助这些场景：
 - “查询审核状态”
 - “提交检查”
 - “准备提交”
+- “确认提审 OPPO”
 
 6. 驳回分析与整改
 - “分析驳回：<原因>”
@@ -86,6 +88,9 @@ HELP_TEXT = """我可以协助这些场景：
 - “确认保存配置”
 - 发送文件后说“绑定材料：APK/图标/截图1/版权证明/ICP证明”
 - “索引上架资源：应用名/包名”
+- “把这个 APK 放到项目根目录下的 release 里面”
+- “确认移动文件”
+- “取消移动文件”
 
 8. 图片 OCR / image2
 - 直接发送图片
@@ -128,12 +133,14 @@ PROJECT_LOGIC_TEXT = """AutoReview Agent
 - “提交检查/能不能提交”走 submission_check。
 - “查看提交配置”只展示非密钥摘要。
 - “设置提交配置”走 stage_config_update，确认后才写入。
+- “把这个 APK 放到 release 里”走 stage_file_move，只暂存；“确认移动文件”才执行复制/移动。
 - “绑定材料：APK/图标/截图1/版权证明/ICP证明”走 bind_material。
 - “分析驳回/分析最近图片/整改清单”分别走驳回分析、图片 OCR 上下文和整改清单。
 
 安全边界：
 - 大模型只输出结构化意图或 ToolCall，不直接改文件、不提交审核、不上传材料。
 - 密钥字段不在飞书展示，也不允许通过飞书修改。
+- 文件移动/复制必须先暂存再确认，目标路径限制在项目目录内。
 - 正式提交、上传、撤回这类高风险动作不靠自由聊天触发。
 
 4. skill/能力说明怎么写
@@ -216,6 +223,15 @@ class ReviewAgent:
         if self._looks_like_oppo_app_list_request(clean_text.lower()):
             return self.query_oppo_app_list(session_id, sender_id=sender_id)
 
+        if self._looks_like_oppo_submit_confirmation(clean_text.lower()):
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=True)
+
+        if self._looks_like_confirm_file_move_request(clean_text):
+            return self.confirm_file_move(session_id, sender_id=sender_id)
+
+        if self._looks_like_cancel_file_move_request(clean_text):
+            return self.cancel_file_move(session_id, sender_id=sender_id)
+
         # 第 1 层：LLM 优先（所有消息先交给 LLM 判断）
         llm_decision = self._interpret_with_llm(session_id, clean_text, sender_id=sender_id)
         
@@ -245,6 +261,9 @@ class ReviewAgent:
     def _handle_hard_rule(self, session_id: str, clean_text: str, sender_id: str | None = None) -> AgentResponse | None:
         if self._looks_like_oppo_app_list_request(clean_text.lower()):
             return self.query_oppo_app_list(session_id, sender_id=sender_id)
+
+        if self._looks_like_oppo_submit_confirmation(clean_text.lower()):
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=True)
 
         market_followup = self._handle_market_followup(session_id, clean_text, sender_id=sender_id)
         if market_followup:
@@ -276,6 +295,12 @@ class ReviewAgent:
 
         if clean_text in {"取消保存配置", "取消配置修改", "放弃配置修改"}:
             return self.cancel_config_update(session_id, sender_id=sender_id)
+
+        if self._looks_like_confirm_file_move_request(clean_text):
+            return self.confirm_file_move(session_id, sender_id=sender_id)
+
+        if self._looks_like_cancel_file_move_request(clean_text):
+            return self.cancel_file_move(session_id, sender_id=sender_id)
 
         if clean_text in {"分析这张图", "用最近图片分析驳回", "分析最近图片", "分析图片"}:
             session = self.state_store.get_session(session_id)
@@ -309,6 +334,9 @@ class ReviewAgent:
         material_index_direct = self._handle_material_index_request(session_id, clean_text, sender_id=sender_id)
         if material_index_direct:
             return material_index_direct
+
+        if self._looks_like_file_move_request(clean_text):
+            return self.stage_file_move(session_id, text=clean_text, sender_id=sender_id)
 
         preference_response = self._handle_market_store_preference(session_id, clean_text, sender_id=sender_id)
         if preference_response:
@@ -452,9 +480,7 @@ class ReviewAgent:
             return self.check_submission(session_id)
 
         if clean_text in {"准备提交"}:
-            session = self.state_store.get_session(session_id)
-            checklist = self._build_submit_checklist(session)
-            return AgentResponse(checklist, {"intent": "submit_checklist", "session": session})
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=False)
 
         semantic_response = self._handle_semantic_intent(session_id, clean_text, sender_id=sender_id)
         if semantic_response:
@@ -661,7 +687,9 @@ class ReviewAgent:
 
     def check_submission(self, session_id: str) -> AgentResponse:
         try:
-            validation = self._make_oppo_agent().validate()
+            oppo_agent = self._make_oppo_agent()
+            validation = oppo_agent.validate()
+            validation = self._attach_oppo_app_check(oppo_agent, validation)
         except OppoError as exc:
             return AgentResponse(
                 _format_error_message("提交检查失败", str(exc), ["检查 OPPO 配置和本地材料后重试。"]),
@@ -671,6 +699,68 @@ class ReviewAgent:
         return AgentResponse(
             self._format_submission_check(validation, session),
             {"intent": "submission_check", "validation": validation, "session": session},
+        )
+
+    def _attach_oppo_app_check(self, oppo_agent: Any, validation: JsonDict) -> JsonDict:
+        result = dict(validation)
+        if not result.get("valid"):
+            return result
+        if not hasattr(oppo_agent, "ensure_app_created"):
+            return result
+        try:
+            app_info = oppo_agent.ensure_app_created()
+        except OppoError as exc:
+            result["app_check"] = {"created": False, "error": str(exc)}
+            result["valid"] = False
+            return result
+        result["app_check"] = {"created": True, "app_info": app_info}
+        return result
+
+    def submit_oppo(
+        self,
+        session_id: str,
+        *,
+        sender_id: str | None = None,
+        confirm: bool = False,
+        wait_task: bool = True,
+        wait_review: bool = False,
+        force: bool = False,
+    ) -> AgentResponse:
+        if not confirm:
+            check = self.check_submission(session_id)
+            return AgentResponse(
+                "OPPO 自动提审未执行\n\n原因：\n"
+                "- 正式提审会上传材料并提交到 OPPO，需要明确确认。\n\n"
+                "当前检查：\n"
+                + check.text
+                + "\n\n下一步：\n- 确认无误后发送“确认提审 OPPO”。",
+                {"intent": "oppo_submit", "confirmed": False, "check": check.data},
+            )
+        try:
+            result = self._make_oppo_agent().submit(
+                wait_task=wait_task,
+                wait_review=wait_review,
+                force=force,
+            )
+        except OppoError as exc:
+            return AgentResponse(
+                _format_error_message(
+                    "OPPO 自动提审失败",
+                    str(exc),
+                    ["先发送“提交检查”确认本地材料和 OPPO 应用创建状态。", "修正后再发送“确认提审 OPPO”。"],
+                ),
+                {"intent": "oppo_submit", "confirmed": True, "error": str(exc)},
+            )
+        self.state_store.update_session(
+            session_id,
+            {
+                "last_oppo_submit": result,
+                "sender_id": sender_id,
+            },
+        )
+        return AgentResponse(
+            self._format_oppo_submit_result(result),
+            {"intent": "oppo_submit", "confirmed": True, "result": result},
         )
 
     def build_remediation_checklist(
@@ -826,6 +916,120 @@ class ReviewAgent:
             {"intent": "cancel_config_update"},
         )
 
+    def stage_file_move(
+        self,
+        session_id: str,
+        *,
+        source_path: str = "",
+        target_dir: str = "",
+        target_path: str = "",
+        operation: str = "",
+        overwrite: bool = False,
+        text: str = "",
+        sender_id: str | None = None,
+    ) -> AgentResponse:
+        session = self.state_store.get_session(session_id)
+        try:
+            plan = self._build_file_move_plan(
+                session,
+                source_path=source_path,
+                target_dir=target_dir,
+                target_path=target_path,
+                operation=operation,
+                overwrite=overwrite,
+                text=text,
+            )
+        except ValueError as exc:
+            return AgentResponse(
+                _format_error_message(
+                    "文件移动暂存失败",
+                    str(exc),
+                    [
+                        "请明确源文件路径和目标目录，或先上传文件/完成打包后再说“把这个 APK 放到项目根目录下的 release 里面”。",
+                    ],
+                ),
+                {"intent": "stage_file_move", "error": str(exc)},
+            )
+        self.state_store.update_session(
+            session_id,
+            {
+                "pending_file_move": plan,
+                "sender_id": sender_id,
+            },
+        )
+        action = "移动" if plan["operation"] == "move" else "复制"
+        overwrite_text = "是" if plan.get("overwrite") else "否"
+        return AgentResponse(
+            "文件操作已暂存，尚未执行\n"
+            "\n计划：\n"
+            f"- 操作：{action}\n"
+            f"- 源文件：{plan['source_path']}\n"
+            f"- 目标文件：{plan['target_path']}\n"
+            f"- 覆盖已有文件：{overwrite_text}\n"
+            "\n下一步：\n"
+            "- 发送“确认移动文件”后才会执行。\n"
+            "- 发送“取消移动文件”可放弃本次操作。",
+            {"intent": "stage_file_move", "pending_file_move": plan},
+        )
+
+    def confirm_file_move(
+        self,
+        session_id: str,
+        sender_id: str | None = None,
+    ) -> AgentResponse:
+        session = self.state_store.get_session(session_id)
+        pending = session.get("pending_file_move") or {}
+        if not pending:
+            return AgentResponse(
+                _format_error_message(
+                    "没有待确认的文件操作",
+                    "当前会话没有暂存文件移动/复制操作。",
+                    ["可以先发送“把这个 APK 放到项目根目录下的 release 里面”。"],
+                ),
+                {"intent": "confirm_file_move", "missing": "pending_file_move"},
+            )
+        try:
+            result = self._execute_file_move_plan(pending)
+        except ValueError as exc:
+            return AgentResponse(
+                _format_error_message("文件操作失败", str(exc), ["检查源文件是否存在、目标目录是否在项目目录内，然后重新暂存。"]),
+                {"intent": "confirm_file_move", "error": str(exc), "pending_file_move": pending},
+            )
+        self.state_store.update_session(
+            session_id,
+            {
+                "pending_file_move": {},
+                "last_file_move": result,
+                "sender_id": sender_id,
+            },
+        )
+        action = "移动" if result["operation"] == "move" else "复制"
+        return AgentResponse(
+            "文件操作已完成\n"
+            "\n结果：\n"
+            f"- 操作：{action}\n"
+            f"- 源文件：{result['source_path']}\n"
+            f"- 目标文件：{result['target_path']}",
+            {"intent": "confirm_file_move", "result": result},
+        )
+
+    def cancel_file_move(
+        self,
+        session_id: str,
+        sender_id: str | None = None,
+    ) -> AgentResponse:
+        self.state_store.update_session(
+            session_id,
+            {
+                "pending_file_move": {},
+                "sender_id": sender_id,
+            },
+        )
+        return AgentResponse(
+            "文件操作已取消\n\n结果：\n- 已取消当前会话待确认的文件移动/复制操作。",
+            {"intent": "cancel_file_move"},
+        )
+
     def bind_last_upload_as_material(
         self,
         session_id: str,
@@ -970,10 +1174,11 @@ class ReviewAgent:
         if self._looks_like_submission_check_request(lowered):
             return self.check_submission(session_id)
 
+        if self._looks_like_oppo_submit_confirmation(lowered):
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=True)
+
         if self._looks_like_submit_prepare_request(lowered):
-            session = self.state_store.get_session(session_id)
-            checklist = self._build_submit_checklist(session)
-            return AgentResponse(checklist, {"intent": "submit_checklist", "session": session, "semantic": True})
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=False)
 
         semantic_market_intent = self._parse_market_semantic_intent(text, session_id)
         if semantic_market_intent:
@@ -1254,6 +1459,28 @@ class ReviewAgent:
                     if isinstance(item, dict)
                 ],
             }
+        last_package_result = session.get("last_package_result") or {}
+        compact_package_result = {}
+        if last_package_result:
+            resolved_package = last_package_result.get("resolved_package") or {}
+            compact_package_result = {
+                "latest_apks": _normalize_string_list(last_package_result.get("latest_apks") or [])[:3],
+                "resolved_package": {
+                    "app_name": str(resolved_package.get("app_name") or ""),
+                    "pkg_name": str(resolved_package.get("pkg_name") or ""),
+                    "channel": str(resolved_package.get("channel") or ""),
+                    "version_code": str(resolved_package.get("version_code") or ""),
+                    "version_name": str(resolved_package.get("version_name") or ""),
+                },
+            }
+        last_upload = session.get("last_upload") or {}
+        compact_last_upload = {}
+        if last_upload:
+            compact_last_upload = {
+                "file_name": str(last_upload.get("file_name") or ""),
+                "resource_type": str(last_upload.get("resource_type") or ""),
+                "path": str(last_upload.get("path") or ""),
+            }
         app_info = session.get("app_info") or {}
         compact_status = session.get("last_oppo_status") or {}
         compact_status = {
@@ -1276,8 +1503,11 @@ class ReviewAgent:
                 "last_market_search": compact_market_search,
                 "last_market_search_request": _json_safe(session.get("last_market_search_request") or {}),
                 "last_market_filtered_names": _json_safe(session.get("last_market_filtered_names") or {}),
+                "last_package_result": compact_package_result,
+                "last_upload": compact_last_upload,
                 "last_oppo_status": compact_status,
                 "pending_config_patch": _json_safe(session.get("pending_config_patch") or {}),
+                "pending_file_move": _json_safe(session.get("pending_file_move") or {}),
             },
             "recent_conversation": recent_conversation,
             "long_term_memory": self._structured_long_term_memory(session_id),
@@ -1474,9 +1704,18 @@ class ReviewAgent:
             )
         if intent == "submission_check":
             return self.check_submission(session_id)
+        if intent == "oppo_submit":
+            confirm = _optional_bool(decision.get("confirm")) or self._looks_like_oppo_submit_confirmation(text.lower())
+            return self.submit_oppo(
+                session_id,
+                sender_id=sender_id,
+                confirm=confirm,
+                wait_task=bool(_optional_bool(decision.get("wait_task"))),
+                wait_review=bool(_optional_bool(decision.get("wait_review"))),
+                force=bool(_optional_bool(decision.get("force"))),
+            )
         if intent == "submit_checklist":
-            session = self.state_store.get_session(session_id)
-            return AgentResponse(self._build_submit_checklist(session), {"intent": "submit_checklist", "session": session})
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=False)
         if intent in {"package_apk", "batch_package"}:
             package_response = self._run_packaging_intent(session_id, text, decision)
             if package_response:
@@ -1486,6 +1725,8 @@ class ReviewAgent:
         if intent == "view_submission_config":
             return self.view_submission_config()
         if intent == "stage_config_update":
+            if self._looks_like_file_move_request(text):
+                return self.stage_file_move(session_id, text=text, sender_id=sender_id)
             assignment = str(decision.get("config_assignment") or self._extract_assignment_payload(text)).strip()
             packaging_script_update = self._extract_packaging_script_update(text)
             if packaging_script_update and (
@@ -1501,6 +1742,21 @@ class ReviewAgent:
             return self.confirm_config_update(session_id, sender_id=sender_id)
         if intent == "cancel_config_update":
             return self.cancel_config_update(session_id, sender_id=sender_id)
+        if intent == "stage_file_move":
+            return self.stage_file_move(
+                session_id,
+                source_path=str(decision.get("source_path") or ""),
+                target_dir=str(decision.get("target_dir") or ""),
+                target_path=str(decision.get("target_path") or ""),
+                operation=str(decision.get("operation") or ""),
+                overwrite=bool(_optional_bool(decision.get("overwrite"))),
+                text=text,
+                sender_id=sender_id,
+            )
+        if intent == "confirm_file_move":
+            return self.confirm_file_move(session_id, sender_id=sender_id)
+        if intent == "cancel_file_move":
+            return self.cancel_file_move(session_id, sender_id=sender_id)
         if intent == "bind_material":
             label = str(decision.get("material_label") or self._extract_material_label(text)).strip()
             return self.bind_last_upload_as_material(session_id, label, sender_id=sender_id)
@@ -1812,6 +2068,21 @@ class ReviewAgent:
             self._tool_submission_check,
         )
         registry.register(
+            "oppo_submit",
+            "确认后执行 OPPO 自动提审；会上传材料、提交新版本并等待 OPPO 提交任务结果。",
+            {
+                "type": "object",
+                "properties": {
+                    "confirm": {"type": "boolean"},
+                    "wait_task": {"type": "boolean"},
+                    "wait_review": {"type": "boolean"},
+                    "force": {"type": "boolean"},
+                },
+                "additionalProperties": True,
+            },
+            self._tool_oppo_submit,
+        )
+        registry.register(
             "view_submission_config",
             "查看当前 OPPO 提交配置的非密钥字段摘要。",
             {"type": "object", "properties": {}, "additionalProperties": False},
@@ -1841,6 +2112,34 @@ class ReviewAgent:
             "取消当前会话暂存的配置修改。",
             {"type": "object", "properties": {}, "additionalProperties": False},
             self._tool_cancel_config_update,
+        )
+        registry.register(
+            "stage_file_move",
+            "暂存本地文件复制/移动计划；不会立即执行，必须再确认。",
+            {
+                "type": "object",
+                "properties": {
+                    "source_path": {"type": "string", "description": "源文件路径；可空，空时使用最近上传文件或最近打包 APK。"},
+                    "target_dir": {"type": "string", "description": "目标目录；例如 D:\\AutoReview\\release。"},
+                    "target_path": {"type": "string", "description": "目标文件完整路径；优先于 target_dir。"},
+                    "operation": {"type": "string", "description": "copy 或 move；不确定时用 copy。"},
+                    "overwrite": {"type": "boolean", "description": "是否覆盖已存在目标文件。"},
+                },
+                "additionalProperties": True,
+            },
+            self._tool_stage_file_move,
+        )
+        registry.register(
+            "confirm_file_move",
+            "确认并执行当前会话暂存的文件复制/移动计划。",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_confirm_file_move,
+        )
+        registry.register(
+            "cancel_file_move",
+            "取消当前会话暂存的文件复制/移动计划。",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_cancel_file_move,
         )
         registry.register(
             "bind_material",
@@ -2018,6 +2317,7 @@ class ReviewAgent:
             return None
         tool_call = self._normalize_market_tool_call(tool_call, text)
         tool_call = self._normalize_oppo_tool_call(tool_call, text)
+        tool_call = self._normalize_file_move_tool_call(tool_call, text)
         if tool_call.is_noop:
             return None
         if tool_call.confidence is not None and tool_call.confidence < 0.45:
@@ -2069,6 +2369,16 @@ class ReviewAgent:
                 arguments={},
                 confidence=tool_call.confidence,
                 reason=tool_call.reason or "用户要查询 OPPO 平台已创建应用列表，不是单个应用审核状态。",
+            )
+        return tool_call
+
+    def _normalize_file_move_tool_call(self, tool_call: ToolCall, text: str) -> ToolCall:
+        if tool_call.name == "stage_config_update" and self._looks_like_file_move_request(text):
+            return ToolCall(
+                name="stage_file_move",
+                arguments={},
+                confidence=tool_call.confidence,
+                reason=tool_call.reason or "用户要移动/复制本地文件，应先暂存文件操作并等待确认。",
             )
         return tool_call
 
@@ -2136,6 +2446,19 @@ class ReviewAgent:
     def _tool_submission_check(self, call: ToolCall, context: JsonDict) -> AgentResponse:
         return self.check_submission(str(context.get("session_id") or ""))
 
+    def _tool_oppo_submit(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        text = str(context.get("text") or "")
+        confirm = _optional_bool(call.arguments.get("confirm")) or self._looks_like_oppo_submit_confirmation(text.lower())
+        wait_task = _optional_bool(call.arguments.get("wait_task"))
+        return self.submit_oppo(
+            str(context.get("session_id") or ""),
+            sender_id=context.get("sender_id"),
+            confirm=confirm,
+            wait_task=True if wait_task is None else bool(wait_task),
+            wait_review=bool(_optional_bool(call.arguments.get("wait_review"))),
+            force=bool(_optional_bool(call.arguments.get("force"))),
+        )
+
     def _tool_view_submission_config(self, call: ToolCall, context: JsonDict) -> AgentResponse:
         return self.view_submission_config()
 
@@ -2174,6 +2497,30 @@ class ReviewAgent:
 
     def _tool_cancel_config_update(self, call: ToolCall, context: JsonDict) -> AgentResponse:
         return self.cancel_config_update(
+            str(context.get("session_id") or ""),
+            sender_id=context.get("sender_id"),
+        )
+
+    def _tool_stage_file_move(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        return self.stage_file_move(
+            str(context.get("session_id") or ""),
+            source_path=str(call.arguments.get("source_path") or ""),
+            target_dir=str(call.arguments.get("target_dir") or ""),
+            target_path=str(call.arguments.get("target_path") or ""),
+            operation=str(call.arguments.get("operation") or ""),
+            overwrite=bool(_optional_bool(call.arguments.get("overwrite"))),
+            text=str(context.get("text") or ""),
+            sender_id=context.get("sender_id"),
+        )
+
+    def _tool_confirm_file_move(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        return self.confirm_file_move(
+            str(context.get("session_id") or ""),
+            sender_id=context.get("sender_id"),
+        )
+
+    def _tool_cancel_file_move(self, call: ToolCall, context: JsonDict) -> AgentResponse:
+        return self.cancel_file_move(
             str(context.get("session_id") or ""),
             sender_id=context.get("sender_id"),
         )
@@ -2798,6 +3145,167 @@ class ReviewAgent:
             )
         return None
 
+    def _build_file_move_plan(
+        self,
+        session: JsonDict,
+        *,
+        source_path: str = "",
+        target_dir: str = "",
+        target_path: str = "",
+        operation: str = "",
+        overwrite: bool = False,
+        text: str = "",
+    ) -> JsonDict:
+        text = str(text or "")
+        source = self._resolve_file_move_source(session, source_path=source_path, text=text)
+        if not source.exists() or not source.is_file():
+            raise ValueError(f"源文件不存在：{source}")
+        op = self._resolve_file_move_operation(operation, text)
+        target = self._resolve_file_move_target(
+            source,
+            target_dir=target_dir,
+            target_path=target_path,
+            text=text,
+        )
+        project_root = self._project_root()
+        if not self._path_is_inside(target, project_root):
+            raise ValueError(f"目标路径必须位于项目目录内：{project_root}")
+        return {
+            "operation": op,
+            "source_path": str(source),
+            "target_path": str(target),
+            "project_root": str(project_root),
+            "overwrite": bool(overwrite),
+            "created_at": int(time.time()),
+        }
+
+    def _execute_file_move_plan(self, plan: JsonDict) -> JsonDict:
+        operation = str(plan.get("operation") or "copy").strip().lower()
+        if operation not in {"copy", "move"}:
+            raise ValueError(f"不支持的文件操作：{operation}")
+        source = Path(str(plan.get("source_path") or ""))
+        target = Path(str(plan.get("target_path") or ""))
+        project_root = Path(str(plan.get("project_root") or self._project_root()))
+        if not source.exists() or not source.is_file():
+            raise ValueError(f"源文件不存在：{source}")
+        if not self._path_is_inside(target, project_root):
+            raise ValueError(f"目标路径必须位于项目目录内：{project_root}")
+        if target.exists() and not bool(plan.get("overwrite")):
+            raise ValueError(f"目标文件已存在：{target}。如需覆盖，请重新暂存并说明“覆盖”。")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if operation == "move":
+            shutil.move(str(source), str(target))
+        else:
+            shutil.copy2(source, target)
+        return {
+            "operation": operation,
+            "source_path": str(source),
+            "target_path": str(target),
+            "overwrite": bool(plan.get("overwrite")),
+        }
+
+    def _resolve_file_move_source(self, session: JsonDict, *, source_path: str = "", text: str = "") -> Path:
+        explicit_path = str(source_path or "").strip().strip("\"'")
+        if not explicit_path:
+            candidates = self._extract_file_paths_from_text(text)
+            explicit_path = candidates[0] if candidates else ""
+        if explicit_path:
+            return Path(explicit_path)
+
+        upload = session.get("last_upload") or {}
+        upload_path = Path(str(upload.get("path") or "")) if upload.get("path") else None
+        if upload_path and upload_path.suffix.lower() in {".apk", ".aab"}:
+            return upload_path
+
+        package_result = session.get("last_package_result") or {}
+        latest_apks = package_result.get("latest_apks") or []
+        if latest_apks:
+            return Path(str(latest_apks[0]))
+
+        if upload_path:
+            return upload_path
+        raise ValueError("没有找到可移动的源文件。")
+
+    def _resolve_file_move_target(
+        self,
+        source: Path,
+        *,
+        target_dir: str = "",
+        target_path: str = "",
+        text: str = "",
+    ) -> Path:
+        clean_target_path = str(target_path or "").strip().strip("\"'")
+        if clean_target_path:
+            target = Path(clean_target_path)
+            if (target.exists() and target.is_dir()) or not target.suffix:
+                target = self._normalize_release_dir(target)
+                return target / source.name
+            return target
+
+        clean_target_dir = str(target_dir or "").strip().strip("\"'")
+        if not clean_target_dir:
+            clean_target_dir = self._infer_file_move_target_dir(text)
+        if not clean_target_dir:
+            raise ValueError("没有识别到目标目录。")
+        target_dir_path = self._normalize_release_dir(Path(clean_target_dir))
+        return target_dir_path / source.name
+
+    def _infer_file_move_target_dir(self, text: str) -> str:
+        clean = str(text or "").strip()
+        lowered = clean.lower()
+        project_root = self._project_root()
+        if "项目根目录" in clean and ("release" in lowered or "realse" in lowered):
+            return str(project_root / "release")
+        if "release" in lowered or "realse" in lowered:
+            return str(project_root / "release")
+        match = re.search(r"(?:放到|移动到|复制到|拷贝到|挪到|到)\s*([A-Za-z]:[\\/][^，,。；;\r\n]+)", clean)
+        if match:
+            target = match.group(1).strip().strip("\"'")
+            target = re.sub(r"(里面|里|目录|下|中)$", "", target).strip()
+            return target
+        return ""
+
+    def _resolve_file_move_operation(self, operation: str, text: str) -> str:
+        clean_operation = str(operation or "").strip().lower()
+        if clean_operation in {"copy", "move"}:
+            return clean_operation
+        lowered = str(text or "").lower()
+        if any(term in lowered for term in ("复制", "拷贝", "copy")):
+            return "copy"
+        if any(term in lowered for term in ("移动", "挪到", "剪切", "move")):
+            return "move"
+        return "copy"
+
+    def _project_root(self) -> Path:
+        if self.oppo_config_path:
+            return self.oppo_config_path.parent.parent.resolve()
+        if self.packaging_config_path:
+            return self.packaging_config_path.parent.parent.resolve()
+        return Path.cwd().resolve()
+
+    @staticmethod
+    def _normalize_release_dir(path: Path) -> Path:
+        if path.name.lower() == "realse":
+            return path.with_name("release")
+        return path
+
+    @staticmethod
+    def _path_is_inside(path: Path, root: Path) -> bool:
+        try:
+            path.resolve(strict=False).relative_to(root.resolve(strict=False))
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _extract_file_paths_from_text(text: str) -> list[str]:
+        matches = re.findall(
+            r"([A-Za-z]:[\\/][^\"'<>|\r\n]+?\.(?:apk|aab|png|jpe?g|pdf|zip|xlsx?|json|txt))",
+            str(text or ""),
+            flags=re.IGNORECASE,
+        )
+        return [item.strip().strip("\"'，,。；;") for item in matches]
+
     @staticmethod
     def _extract_generic_app_search_query(text: str) -> str:
         clean = (text or "").strip()
@@ -2862,6 +3370,28 @@ class ReviewAgent:
     def _looks_like_submit_prepare_request(self, text: str) -> bool:
         return self._contains_any(text, ("准备提交", "提交前要做", "提交前需要", "发版前", "上线前"))
 
+    def _looks_like_oppo_submit_confirmation(self, text: str) -> bool:
+        lowered = str(text or "").lower()
+        if "oppo" not in lowered and "开放平台" not in lowered:
+            return False
+        return self._contains_any(
+            lowered,
+            (
+                "确认提审",
+                "确认提交",
+                "正式提审",
+                "正式提交",
+                "立即提审",
+                "立即提交",
+                "马上提审",
+                "马上提交",
+                "开始提审",
+                "开始提交",
+                "提交到oppo",
+                "提交到 oppo",
+            ),
+        )
+
     def _looks_like_last_image_analysis_request(self, text: str) -> bool:
         return self._contains_any(text, ("图片", "截图", "这张图", "最近图片")) and self._contains_any(
             text,
@@ -2900,6 +3430,25 @@ class ReviewAgent:
             text,
             ("材料", "apk", "图标", "截图", "版权", "icp", "证明", "上传"),
         )
+
+    def _looks_like_file_move_request(self, text: str) -> bool:
+        lowered = str(text or "").lower()
+        if self._looks_like_confirm_file_move_request(text) or self._looks_like_cancel_file_move_request(text):
+            return False
+        if self._contains_any(lowered, ("设置提交配置", "批量设置提交配置", "submission.", "packaging.", "绑定材料")):
+            return False
+        if not self._contains_any(lowered, ("apk", ".aab", ".png", ".jpg", ".jpeg", ".pdf", "文件", "这个包")):
+            return False
+        return self._contains_any(
+            lowered,
+            ("放到", "移动到", "复制到", "拷贝到", "挪到", "移动", "复制", "拷贝", "release", "realse"),
+        )
+
+    def _looks_like_confirm_file_move_request(self, text: str) -> bool:
+        return self._contains_any(str(text or ""), ("确认移动文件", "确认复制文件", "确认文件移动", "确认文件操作"))
+
+    def _looks_like_cancel_file_move_request(self, text: str) -> bool:
+        return self._contains_any(str(text or ""), ("取消移动文件", "取消复制文件", "取消文件移动", "取消文件操作"))
 
     def _looks_like_record_app_request(self, text: str) -> bool:
         return self._contains_any(text, ("记录", "保存", "登记")) and self._contains_any(
@@ -3080,6 +3629,10 @@ class ReviewAgent:
         preferences = session.get("market_store_preferences") or {}
         disabled_stores = [_store_label(store) for store in preferences.get("disabled_stores") or []]
         preference_line = f"\n- 应用商店偏好：不查询 {'、'.join(disabled_stores)}" if disabled_stores else ""
+        pending_file_move = session.get("pending_file_move") or {}
+        pending_file_move_line = ""
+        if pending_file_move:
+            pending_file_move_line = f"\n- 待确认文件操作：{pending_file_move.get('source_path')} -> {pending_file_move.get('target_path')}"
         memory = session.get("agent_memory") or []
         structured_memory = session.get("long_term_memory") or {}
         memory_count = len(memory) or len(structured_memory.get("notes") or [])
@@ -3100,6 +3653,7 @@ class ReviewAgent:
             f"{market_line}"
             f"{snapshot_line}"
             f"{preference_line}"
+            f"{pending_file_move_line}"
             f"{memory_line}"
             f"{structured_line}"
         )
@@ -3119,7 +3673,7 @@ class ReviewAgent:
             missing.append("ICP 备案网站证明")
 
         if not missing:
-            return "提交前检查：当前会话没有发现明显缺口。下一步可接入 OPPO submit 工具。"
+            return "提交前检查：当前会话没有发现明显缺口。确认无误后发送“确认提审 OPPO”。"
         return "提交前检查发现待补项：\n" + "\n".join(f"- {item}" for item in missing)
 
     @staticmethod
@@ -3135,16 +3689,62 @@ class ReviewAgent:
         }.get(str(status.get("review_state")), str(status.get("review_state") or "未知"))
         audit_text = app_info.get("audit_status_name") or app_info.get("state_name") or state_label
         lines = ["OPPO 审核状态", "", "应用信息：", f"- 应用：{status.get('pkg_name')}", f"- 版本：{status.get('version_code')}", "", "审核结果：", f"- 状态：{audit_text}"]
+        if status.get("app_created") is False:
+            lines.append("- 应用详情：未确认已在当前 OPPO 开发者账号创建")
         if task.get("error"):
             lines.append(f"- 提交任务：查询失败（{_shorten(task['error'])}）")
         elif task:
-            task_text = task.get("task_state_name") or task.get("state_name") or task.get("task_state")
+            task_text = _format_oppo_task_state(task)
             if task_text:
                 lines.append(f"- 提交任务：{task_text}")
+            if task.get("err_msg"):
+                lines.append(f"- 任务错误：{_shorten(task['err_msg'])}")
         if status.get("review_state") == "rejected":
             reason = extract_rejection_reason(app_info)
             if reason:
                 lines.append(f"- 驳回原因：{_shorten(reason)}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_oppo_submit_result(result: JsonDict) -> str:
+        app_info = result.get("app_info") or {}
+        release = result.get("release") or {}
+        task = result.get("task") or {}
+        review = result.get("review") or {}
+        task_state = str(task.get("task_state") or "")
+        if task_state == "3":
+            status_text = "任务失败"
+        elif task_state == "2":
+            status_text = "提交任务完成"
+        elif task_state == "1":
+            status_text = "OPPO 处理中"
+        else:
+            status_text = "接口已接收"
+        lines = [
+            "OPPO 自动提审",
+            "",
+            "提交结果：",
+            f"- 状态：{status_text}",
+            f"- 包名：{result.get('pkg_name') or app_info.get('pkg_name') or '未知'}",
+            f"- 版本：{result.get('version_code') or '未知'}",
+        ]
+        if app_info.get("app_name"):
+            lines.append(f"- 应用：{app_info['app_name']}")
+        if app_info.get("app_id"):
+            lines.append(f"- OPPO 应用 ID：{app_info['app_id']}")
+        task_id = release.get("task_id") or release.get("id")
+        if task_id:
+            lines.append(f"- 提交任务 ID：{task_id}")
+        if task:
+            task_text = _format_oppo_task_state(task)
+            if task_text:
+                lines.append(f"- 任务状态：{task_text}")
+            if task.get("err_msg"):
+                lines.append(f"- 任务错误：{_shorten(task['err_msg'])}")
+        if review:
+            review_state = review.get("state")
+            if review_state:
+                lines.append(f"- 审核状态：{review_state}")
         return "\n".join(lines)
 
     @staticmethod
@@ -3155,7 +3755,8 @@ class ReviewAgent:
             "OPPO 已创建应用查询",
             "",
             "查询方式：",
-            "- 按本地 packlist/config 中的包名逐个查询 OPPO 应用信息接口。",
+            "- 按当前会话/config/packlist 中的包名逐个查询 OPPO 应用信息接口。",
+            "- 只把返回 app_id、应用名、开发者 ID、创建时间等身份字段的记录计为已创建。",
             "",
             "结果：",
             f"- 已确认创建：{len(apps)} 个",
@@ -3191,6 +3792,14 @@ class ReviewAgent:
         lines = ["提交检查", "", "检查结果：", f"- 配置文件：{'通过' if validation.get('valid') else '不通过'}"]
         missing_fields = validation.get("missing_required_fields") or []
         missing_files = validation.get("missing_files") or []
+        app_check = validation.get("app_check") or {}
+        if app_check:
+            if app_check.get("created"):
+                app_info = app_check.get("app_info") or {}
+                label = app_info.get("app_name") or app_info.get("name") or app_info.get("pkg_name") or "已创建"
+                lines.append(f"- OPPO 应用：已确认创建（{label}）")
+            else:
+                lines.append(f"- OPPO 应用：未确认创建（{_shorten(app_check.get('error'))}）")
         if missing_fields:
             lines.append("- 缺字段：" + "、".join(str(item) for item in missing_fields[:8]))
         if missing_files:
@@ -3205,7 +3814,8 @@ class ReviewAgent:
             lines.append(f"- 整改待办：{len(checklist)} 项，发送“整改清单”查看")
         lines.append("")
         lines.append("结论：")
-        if validation.get("valid") and not (analysis and not analysis.get("can_resubmit_same_apk")):
+        app_ready = not app_check or bool(app_check.get("created"))
+        if validation.get("valid") and app_ready and not (analysis and not analysis.get("can_resubmit_same_apk")):
             lines.append("结论：可以进入人工确认提交步骤。")
         else:
             lines.append("结论：先补齐缺口或处理风险，再提交。")
@@ -3309,6 +3919,10 @@ class ReviewAgent:
                     )
                 else:
                     result = self.packaging_agent.package_batch(dry_run=dry_run, continue_on_error=True)
+                self.state_store.update_session(
+                    session_id,
+                    {"last_batch_package_result": _json_safe(result)},
+                )
                 return AgentResponse(
                     format_batch_package_result(result, dry_run=dry_run),
                     {"intent": "batch_package", "result": result, "dry_run": dry_run},
@@ -3318,6 +3932,10 @@ class ReviewAgent:
                 pkg_name=str(decision.get("pkg_name") or parsed.get("pkg_name") or ""),
                 channels=_normalize_string_list(decision.get("channels") or parsed.get("channels") or []),
                 dry_run=dry_run,
+            )
+            self.state_store.update_session(
+                session_id,
+                {"last_package_result": _json_safe(result)},
             )
             return AgentResponse(
                 format_package_result(result, dry_run=dry_run),
@@ -3538,16 +4156,16 @@ class ReviewAgent:
 
     def _oppo_app_list_candidates(self, session_id: str = "") -> list[str]:
         candidates: list[str] = []
-        try:
-            candidates.extend(str(entry.pkg_name or "") for entry in self._all_packaging_entries())
-        except Exception:
-            pass
         session_app = self.state_store.get_session(session_id).get("app_info") if session_id else {}
         if isinstance(session_app, dict) and session_app.get("pkg_name"):
             candidates.append(str(session_app["pkg_name"]))
         config_app = self._config_app_info()
         if config_app.get("pkg_name"):
             candidates.append(str(config_app["pkg_name"]))
+        try:
+            candidates.extend(str(entry.pkg_name or "") for entry in self._all_packaging_entries())
+        except Exception:
+            pass
         seen: set[str] = set()
         result: list[str] = []
         for pkg_name in candidates:
@@ -3901,6 +4519,17 @@ def _shorten(value: Any, limit: int = 120) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1] + "..."
+
+
+def _format_oppo_task_state(task: JsonDict) -> str:
+    named = task.get("task_state_name") or task.get("state_name")
+    if named:
+        return str(named)
+    return {
+        "1": "处理中",
+        "2": "任务完成",
+        "3": "任务失败",
+    }.get(str(task.get("task_state") or ""), str(task.get("task_state") or ""))
 
 
 def _material_name(material_type: Any, index: Any = None) -> str:
@@ -4307,6 +4936,21 @@ def _optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on", "确认", "是", "要"}:
+        return True
+    if text in {"0", "false", "no", "n", "off", "否", "不要"}:
+        return False
+    return None
 
 
 def _looks_like_last_packaging_page_request(text: Any) -> bool:

@@ -67,6 +67,59 @@ class MaterialIndexerTest(unittest.TestCase):
             self.assertNotIn("submission.special_url.1.path", suggestion.patch)
             self.assertFalse(suggestion.warnings)
 
+    def test_packlist_res_path_icons_android_uses_material_root_siblings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            materials = root / "materials"
+            app_dir = materials / "英语" / "一年级" / "上册"
+            icon_dir = app_dir / "icons" / "android"
+            screenshot_dir = app_dir / "截图"
+            material_dir = app_dir / "智趣点读"
+            icon_dir.mkdir(parents=True)
+            screenshot_dir.mkdir(parents=True)
+            material_dir.mkdir(parents=True)
+            (icon_dir / "playstore-icon.png").write_bytes(b"icon")
+            (screenshot_dir / "screen-1.jpg").write_bytes(b"s1")
+            (screenshot_dir / "screen-2.jpg").write_bytes(b"s2")
+            (material_dir / "小学三年级下册英语免责函oppo.docx").write_bytes(b"wrong")
+            (app_dir / "1000一年级英语上册免责函oppo.png").write_bytes(b"right")
+
+            snapshot = root / "packlist-scan.json"
+            snapshot.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "result": [
+                            {
+                                "sheet": "CfgGameConfig",
+                                "row": 4,
+                                "channel": "xm1000",
+                                "app_name": "一年级英语上册",
+                                "pkg_name": "com.pelbs.book1000",
+                                "version_code": "68",
+                                "version_name": "3.1000.38.2",
+                                "res_path": str(icon_dir),
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            suggestion = suggest_submission_materials(
+                root=materials,
+                pkg_name="com.pelbs.book1000",
+                packlist_snapshot=snapshot,
+                config_path=root / "config" / "oppo_submission.json",
+            )
+
+            self.assertIn("icons", suggestion.patch["submission.icon_url.path"])
+            self.assertIn("screen-1.jpg", suggestion.patch["submission.pic_url.0.path"])
+            self.assertIn("screen-2.jpg", suggestion.patch["submission.pic_url.1.path"])
+            self.assertIn("1000一年级英语上册免责函oppo.png", suggestion.patch["submission.special_url.0.path"])
+            self.assertNotIn("未匹配到截图", suggestion.warnings)
+
     def test_requires_query(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(MaterialIndexError):

@@ -49,6 +49,16 @@ LOCAL_ONLY_FIELDS = {
     "last_rejection_reason",
 }
 
+CREATED_APP_IDENTITY_FIELDS = (
+    "app_id",
+    "app_name",
+    "name",
+    "dev_id",
+    "app_create_time",
+    "create_time",
+    "update_time",
+)
+
 TASK_SUCCESS = "2"
 TASK_FAILED = "3"
 TASK_PENDING = "1"
@@ -160,6 +170,7 @@ class OppoSubmissionAgent:
                 "OPPO resubmission blocked by rejection guard: "
                 f"{guard['analysis']['blocking_reasons']}. Use --force only after the APK/materials are fixed."
             )
+        created_app = self.ensure_app_created()
 
         params = self.prepare_release_params()
         self.logger("Submitting OPPO release request")
@@ -168,6 +179,7 @@ class OppoSubmissionAgent:
             "release": release,
             "pkg_name": params["pkg_name"],
             "version_code": str(params["version_code"]),
+            "app_info": _summarize_app_info(created_app, fallback_pkg_name=str(params["pkg_name"])),
         }
 
         if wait_task:
@@ -225,8 +237,27 @@ class OppoSubmissionAgent:
             "version_code": str(version_code),
             "task": task,
             "app_info": info,
+            "app_created": is_created_app_info(info),
             "review_state": classify_review_state(info),
         }
+
+    def ensure_app_created(self, pkg_name: str | None = None) -> JsonDict:
+        submission = self.config.resolved_submission()
+        clean_pkg_name = str(pkg_name or submission.get("pkg_name") or "").strip()
+        if not clean_pkg_name:
+            raise OppoConfigError("submission.pkg_name is required before OPPO submission")
+        try:
+            info = self.client.get_app_info(clean_pkg_name)
+        except OppoApiError as exc:
+            raise OppoConfigError(
+                f"OPPO 当前开发者账号下未确认创建应用：{clean_pkg_name}；{exc}"
+            ) from exc
+        if not is_created_app_info(info):
+            raise OppoConfigError(
+                f"OPPO 当前开发者账号下未确认创建应用：{clean_pkg_name}；"
+                "应用信息接口未返回 app_id、应用名或创建时间。"
+            )
+        return info
 
     def list_created_apps(self, pkg_names: list[str] | None = None, *, limit: int = 100) -> JsonDict:
         submission = self.config.resolved_submission()
@@ -247,11 +278,10 @@ class OppoSubmissionAgent:
             except OppoApiError as exc:
                 errors.append({"pkg_name": pkg_name, "error": str(exc)})
                 continue
-            app = _summarize_app_info(info, fallback_pkg_name=pkg_name)
-            if app.get("app_id") or app.get("pkg_name") or app.get("app_name"):
-                apps.append(app)
+            if is_created_app_info(info):
+                apps.append(_summarize_app_info(info, fallback_pkg_name=pkg_name))
             else:
-                errors.append({"pkg_name": pkg_name, "error": "OPPO 未返回应用信息"})
+                errors.append({"pkg_name": pkg_name, "error": "OPPO 未返回可确认创建的应用详情"})
 
         return {
             "apps": apps,
@@ -436,6 +466,12 @@ def classify_review_state(info: JsonDict) -> str:
     if info.get("audit_status") or info.get("audit_status_name"):
         return "reviewing"
     return "unknown"
+
+
+def is_created_app_info(info: JsonDict) -> bool:
+    if not isinstance(info, dict) or not info:
+        return False
+    return any(info.get(field) not in (None, "") for field in CREATED_APP_IDENTITY_FIELDS)
 
 
 def _summarize_app_info(info: JsonDict, *, fallback_pkg_name: str = "") -> JsonDict:

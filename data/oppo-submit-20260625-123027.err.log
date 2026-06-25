@@ -1,0 +1,8 @@
+Uploading apk_url: app-release.apk as apk
+Uploading icon_url: playstore-icon.png as photo
+Uploading pic_url: Œ¢–≈Õº∆¨_202105291816521.jpg as photo
+Uploading pic_url: Œ¢–≈Õº∆¨_202105291816522.jpg as photo
+Uploading pic_url: Œ¢–≈Õº∆¨_202105291816523.jpg as photo
+Uploading pic_url: Œ¢–≈Õº∆¨_202105291816524.jpg as photo
+Submitting OPPO release request
+{"ok": false, "error": "OPPO POST request failed: <urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)>"}
