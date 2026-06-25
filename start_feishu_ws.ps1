@@ -1,7 +1,8 @@
 param(
     [string]$Config = "config\oppo_submission.json",
     [ValidateSet("DEBUG", "INFO", "WARN", "ERROR")]
-    [string]$LogLevel = "INFO"
+    [string]$LogLevel = "INFO",
+    [string]$GatewayToken = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +27,40 @@ function Get-FeishuWsProcesses {
             $_.CommandLine -match $MainPattern -and
             $_.CommandLine -match "\bserve-feishu-ws\b"
         }
+}
+
+function Resolve-GatewayToken {
+    if (-not [string]::IsNullOrWhiteSpace($GatewayToken)) {
+        return $GatewayToken
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:OPENCLAW_GATEWAY_TOKEN)) {
+        return $env:OPENCLAW_GATEWAY_TOKEN
+    }
+
+    $candidatePaths = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:OPENCLAW_CONFIG_PATH)) {
+        $candidatePaths += $env:OPENCLAW_CONFIG_PATH
+    }
+    $candidatePaths += (Join-Path $HOME ".openclaw-autoreview\openclaw.json")
+    $candidatePaths += (Join-Path $HOME ".openclaw\openclaw.json")
+
+    foreach ($CandidatePath in $candidatePaths) {
+        if (-not (Test-Path -LiteralPath $CandidatePath)) {
+            continue
+        }
+        try {
+            $ConfigJson = Get-Content -Raw -LiteralPath $CandidatePath | ConvertFrom-Json
+            $Token = $ConfigJson.gateway.auth.token
+            if (-not [string]::IsNullOrWhiteSpace($Token)) {
+                return [string]$Token
+            }
+        }
+        catch {
+            Write-Warning "Could not read OpenClaw gateway token from ${CandidatePath}: $($_.Exception.Message)"
+        }
+    }
+
+    return "autoreview-local-token"
 }
 
 if (-not (Test-Path -LiteralPath $Python)) {
@@ -56,10 +91,11 @@ New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 $ConfigPath = Join-Path $ProjectRoot $Config
 $PowerShellExe = (Get-Process -Id $PID).Path
+$ResolvedGatewayToken = Resolve-GatewayToken
 $Command = @(
     '$ErrorActionPreference = "Stop"',
     '$env:PYTHONUNBUFFERED = "1"',
-    '$env:OPENCLAW_GATEWAY_TOKEN = "autoreview-local-token"',
+    '$env:OPENCLAW_GATEWAY_TOKEN = ' + (Quote-PowerShellArgument $ResolvedGatewayToken),
     "Set-Location -LiteralPath $(Quote-PowerShellArgument $ProjectRoot)",
     "& $(Quote-PowerShellArgument $Python) $(Quote-PowerShellArgument $Main) -c $(Quote-PowerShellArgument $ConfigPath) serve-feishu-ws --log-level $(Quote-PowerShellArgument $LogLevel) 1>> $(Quote-PowerShellArgument $StdoutLog) 2>> $(Quote-PowerShellArgument $StderrLog)"
 ) -join [Environment]::NewLine

@@ -232,7 +232,13 @@ class ReviewAgent:
         if self._looks_like_cancel_file_move_request(clean_text):
             return self.cancel_file_move(session_id, sender_id=sender_id)
 
-        # 第 1 层：LLM 优先（所有消息先交给 LLM 判断）
+        if not self._should_apply_llm_before_rules(clean_text):
+            hard_rule_response = self._handle_hard_rule(session_id, clean_text, sender_id=sender_id)
+            if hard_rule_response:
+                return hard_rule_response
+            return self._handle_message_with_local_fallback(session_id, clean_text, sender_id=sender_id)
+
+        # 第 1 层：LLM 优先（开放表达先交给 LLM 判断）
         llm_decision = self._interpret_with_llm(session_id, clean_text, sender_id=sender_id)
         
         # 如果 LLM 决定使用工具，直接执行
@@ -1280,6 +1286,8 @@ class ReviewAgent:
 
     @staticmethod
     def _should_apply_llm_before_rules(text: str) -> bool:
+        if _looks_like_market_followup(text):
+            return False
         if text in {
             "帮助",
             "help",
@@ -2582,7 +2590,7 @@ class ReviewAgent:
     def _tool_package_lookup(self, call: ToolCall, context: JsonDict) -> AgentResponse | None:
         decision = {
             "intent": "package_lookup",
-            "app_name": str(call.arguments.get("app_name") or ""),
+            "app_name": str(call.arguments.get("app_name") or call.arguments.get("query") or ""),
             "offset": call.arguments.get("offset"),
             "page_size": call.arguments.get("page_size"),
             "last_page": bool(call.arguments.get("last_page")),

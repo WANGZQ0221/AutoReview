@@ -25,7 +25,7 @@ def main() -> int:
     if len(prompt) > 12000:
         prompt = prompt[:12000] + " [内容过长，已截断]"
 
-    os.environ.setdefault("OPENCLAW_GATEWAY_TOKEN", "autoreview-local-token")
+    _ensure_gateway_token(args.profile)
 
     node = _resolve_node()
     openclaw_mjs = _resolve_openclaw_mjs()
@@ -83,6 +83,33 @@ def _resolve_openclaw_mjs() -> Path:
     if candidate.exists():
         return candidate
     return Path("openclaw.mjs")
+
+
+def _ensure_gateway_token(profile: str) -> None:
+    if os.environ.get("OPENCLAW_GATEWAY_TOKEN"):
+        return
+    token = _read_gateway_token(os.environ.get("OPENCLAW_CONFIG_PATH", ""))
+    if not token and profile:
+        token = _read_gateway_token(str(Path.home() / f".openclaw-{profile}" / "openclaw.json"))
+    if not token:
+        token = _read_gateway_token(str(Path.home() / ".openclaw" / "openclaw.json"))
+    os.environ["OPENCLAW_GATEWAY_TOKEN"] = token or "autoreview-local-token"
+
+
+def _read_gateway_token(path: str) -> str:
+    if not path:
+        return ""
+    config_path = Path(path)
+    if not config_path.exists():
+        return ""
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    gateway = data.get("gateway") if isinstance(data, dict) else {}
+    auth = gateway.get("auth") if isinstance(gateway, dict) else {}
+    token = auth.get("token") if isinstance(auth, dict) else ""
+    return str(token or "").strip()
 
 
 def _extract_assistant_text(output: str) -> str:
