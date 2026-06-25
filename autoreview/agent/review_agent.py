@@ -224,7 +224,7 @@ class ReviewAgent:
             return self.query_oppo_app_list(session_id, sender_id=sender_id)
 
         if self._looks_like_oppo_submit_confirmation(clean_text.lower()):
-            return self.submit_oppo(session_id, sender_id=sender_id, confirm=True)
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=True, source_text=clean_text)
 
         if self._looks_like_confirm_file_move_request(clean_text):
             return self.confirm_file_move(session_id, sender_id=sender_id)
@@ -269,7 +269,7 @@ class ReviewAgent:
             return self.query_oppo_app_list(session_id, sender_id=sender_id)
 
         if self._looks_like_oppo_submit_confirmation(clean_text.lower()):
-            return self.submit_oppo(session_id, sender_id=sender_id, confirm=True)
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=True, source_text=clean_text)
 
         market_followup = self._handle_market_followup(session_id, clean_text, sender_id=sender_id)
         if market_followup:
@@ -483,10 +483,10 @@ class ReviewAgent:
             return self.query_oppo_status(clean_text, session_id=session_id, sender_id=sender_id)
 
         if clean_text in {"提交检查", "校验配置", "检查提交"}:
-            return self.check_submission(session_id)
+            return self.check_submission(session_id, source_text=clean_text)
 
         if clean_text in {"准备提交"}:
-            return self.submit_oppo(session_id, sender_id=sender_id, confirm=False)
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=False, source_text=clean_text)
 
         semantic_response = self._handle_semantic_intent(session_id, clean_text, sender_id=sender_id)
         if semantic_response:
@@ -691,11 +691,23 @@ class ReviewAgent:
             {"intent": "oppo_app_list", "result": result},
         )
 
-    def check_submission(self, session_id: str) -> AgentResponse:
+    def check_submission(
+        self,
+        session_id: str,
+        *,
+        target_app_info: JsonDict | None = None,
+        source_text: str = "",
+    ) -> AgentResponse:
+        target_app = self._resolve_submission_target(
+            session_id,
+            explicit_app_info=target_app_info,
+            source_text=source_text,
+        )
         try:
             oppo_agent = self._make_oppo_agent()
             validation = oppo_agent.validate()
-            validation = self._attach_oppo_app_check(oppo_agent, validation)
+            validation = self._attach_submission_target_check(validation, target_app)
+            validation = self._attach_oppo_app_check(oppo_agent, validation, target_app)
         except OppoError as exc:
             return AgentResponse(
                 _format_error_message("提交检查失败", str(exc), ["检查 OPPO 配置和本地材料后重试。"]),
@@ -707,14 +719,42 @@ class ReviewAgent:
             {"intent": "submission_check", "validation": validation, "session": session},
         )
 
-    def _attach_oppo_app_check(self, oppo_agent: Any, validation: JsonDict) -> JsonDict:
+    def _attach_submission_target_check(self, validation: JsonDict, target_app: JsonDict) -> JsonDict:
         result = dict(validation)
-        if not result.get("valid"):
+        if target_app:
+            result["target_app_info"] = target_app
+        config_app = self._config_app_info()
+        mismatches: list[JsonDict] = []
+        for key, label in (
+            ("app_name", "应用名"),
+            ("pkg_name", "包名"),
+            ("version_code", "版本号"),
+        ):
+            target_value = str(target_app.get(key) or "").strip()
+            config_value = str(config_app.get(key) or "").strip()
+            if target_value and config_value and target_value != config_value:
+                mismatches.append(
+                    {
+                        "field": key,
+                        "label": label,
+                        "target": target_value,
+                        "config": config_value,
+                    }
+                )
+        if mismatches:
+            result["target_mismatches"] = mismatches
+            result["valid"] = False
+        return result
+
+    def _attach_oppo_app_check(self, oppo_agent: Any, validation: JsonDict, target_app: JsonDict | None = None) -> JsonDict:
+        result = dict(validation)
+        if not result.get("valid") and not result.get("target_mismatches"):
             return result
         if not hasattr(oppo_agent, "ensure_app_created"):
             return result
+        target_pkg = str((target_app or {}).get("pkg_name") or "").strip()
         try:
-            app_info = oppo_agent.ensure_app_created()
+            app_info = oppo_agent.ensure_app_created(target_pkg) if target_pkg else oppo_agent.ensure_app_created()
         except OppoError as exc:
             result["app_check"] = {"created": False, "error": str(exc)}
             result["valid"] = False
@@ -731,9 +771,10 @@ class ReviewAgent:
         wait_task: bool = True,
         wait_review: bool = False,
         force: bool = False,
+        source_text: str = "",
     ) -> AgentResponse:
         if not confirm:
-            check = self.check_submission(session_id)
+            check = self.check_submission(session_id, source_text=source_text)
             return AgentResponse(
                 "OPPO 自动提审未执行\n\n原因：\n"
                 "- 正式提审会上传材料并提交到 OPPO，需要明确确认。\n\n"
@@ -741,6 +782,17 @@ class ReviewAgent:
                 + check.text
                 + "\n\n下一步：\n- 确认无误后发送“确认提审 OPPO”。",
                 {"intent": "oppo_submit", "confirmed": False, "check": check.data},
+            )
+        precheck = self.check_submission(session_id, source_text=source_text)
+        validation = precheck.data.get("validation") or {}
+        if validation.get("target_mismatches"):
+            return AgentResponse(
+                "OPPO 自动提审未执行\n\n原因：\n"
+                "- 当前提交目标和 OPPO 提交配置不一致，继续提交可能会提交错应用。\n\n"
+                "当前检查：\n"
+                + precheck.text
+                + "\n\n下一步：\n- 先把提交配置改成目标应用，再重新确认提审。",
+                {"intent": "oppo_submit", "confirmed": False, "check": precheck.data},
             )
         try:
             result = self._make_oppo_agent().submit(
@@ -1178,13 +1230,13 @@ class ReviewAgent:
             return self.query_oppo_status(text, session_id=session_id, sender_id=sender_id)
 
         if self._looks_like_submission_check_request(lowered):
-            return self.check_submission(session_id)
+            return self.check_submission(session_id, source_text=text)
 
         if self._looks_like_oppo_submit_confirmation(lowered):
-            return self.submit_oppo(session_id, sender_id=sender_id, confirm=True)
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=True, source_text=text)
 
         if self._looks_like_submit_prepare_request(lowered):
-            return self.submit_oppo(session_id, sender_id=sender_id, confirm=False)
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=False, source_text=text)
 
         semantic_market_intent = self._parse_market_semantic_intent(text, session_id)
         if semantic_market_intent:
@@ -1711,7 +1763,15 @@ class ReviewAgent:
                 sender_id=sender_id,
             )
         if intent == "submission_check":
-            return self.check_submission(session_id)
+            return self.check_submission(
+                session_id,
+                target_app_info={
+                    "app_name": str(decision.get("app_name") or (decision.get("app_info") or {}).get("app_name") or ""),
+                    "pkg_name": str(decision.get("pkg_name") or (decision.get("app_info") or {}).get("pkg_name") or ""),
+                    "version_code": str(decision.get("version_code") or (decision.get("app_info") or {}).get("version_code") or ""),
+                },
+                source_text=text,
+            )
         if intent == "oppo_submit":
             confirm = _optional_bool(decision.get("confirm")) or self._looks_like_oppo_submit_confirmation(text.lower())
             return self.submit_oppo(
@@ -1721,9 +1781,10 @@ class ReviewAgent:
                 wait_task=bool(_optional_bool(decision.get("wait_task"))),
                 wait_review=bool(_optional_bool(decision.get("wait_review"))),
                 force=bool(_optional_bool(decision.get("force"))),
+                source_text=text,
             )
         if intent == "submit_checklist":
-            return self.submit_oppo(session_id, sender_id=sender_id, confirm=False)
+            return self.submit_oppo(session_id, sender_id=sender_id, confirm=False, source_text=text)
         if intent in {"package_apk", "batch_package"}:
             package_response = self._run_packaging_intent(session_id, text, decision)
             if package_response:
@@ -2072,7 +2133,15 @@ class ReviewAgent:
         registry.register(
             "submission_check",
             "执行提交前检查，检查配置、缺文件和最近驳回重提风险。",
-            {"type": "object", "properties": {}, "additionalProperties": False},
+            {
+                "type": "object",
+                "properties": {
+                    "app_name": {"type": "string"},
+                    "pkg_name": {"type": "string"},
+                    "version_code": {"type": "string"},
+                },
+                "additionalProperties": True,
+            },
             self._tool_submission_check,
         )
         registry.register(
@@ -2452,7 +2521,15 @@ class ReviewAgent:
         )
 
     def _tool_submission_check(self, call: ToolCall, context: JsonDict) -> AgentResponse:
-        return self.check_submission(str(context.get("session_id") or ""))
+        return self.check_submission(
+            str(context.get("session_id") or ""),
+            target_app_info={
+                "app_name": str(call.arguments.get("app_name") or ""),
+                "pkg_name": str(call.arguments.get("pkg_name") or ""),
+                "version_code": str(call.arguments.get("version_code") or ""),
+            },
+            source_text=str(context.get("text") or ""),
+        )
 
     def _tool_oppo_submit(self, call: ToolCall, context: JsonDict) -> AgentResponse:
         text = str(context.get("text") or "")
@@ -2465,6 +2542,7 @@ class ReviewAgent:
             wait_task=True if wait_task is None else bool(wait_task),
             wait_review=bool(_optional_bool(call.arguments.get("wait_review"))),
             force=bool(_optional_bool(call.arguments.get("force"))),
+            source_text=text,
         )
 
     def _tool_view_submission_config(self, call: ToolCall, context: JsonDict) -> AgentResponse:
@@ -2801,6 +2879,81 @@ class ReviewAgent:
         if any(app_info.get(key) for key in ("app_name", "pkg_name", "version_code")):
             return dict(app_info)
         return self._config_app_info()
+
+    def _resolve_submission_target(
+        self,
+        session_id: str,
+        *,
+        explicit_app_info: JsonDict | None = None,
+        source_text: str = "",
+    ) -> JsonDict:
+        session = self.state_store.get_session(session_id)
+        explicit = self._clean_app_info(explicit_app_info or {})
+        if explicit and self._source_mentions_app_info(source_text, explicit):
+            return explicit
+        package_target = self._app_info_from_package_result(session.get("last_package_result") or {})
+        if package_target:
+            return package_target
+        if explicit:
+            return explicit
+        session_app = self._clean_app_info(session.get("app_info") or {})
+        if session_app:
+            return session_app
+        return self._clean_app_info(self._config_app_info())
+
+    def _package_session_patch(self, result: JsonDict) -> JsonDict:
+        patch: JsonDict = {"last_package_result": _json_safe(result)}
+        app_info = self._app_info_from_package_result(result)
+        if app_info:
+            patch["app_info"] = app_info
+        return patch
+
+    def _app_info_from_package_result(self, result: JsonDict) -> JsonDict:
+        resolved = result.get("resolved_package") or {}
+        if not resolved:
+            channel = self._package_result_channel(result)
+            if channel:
+                try:
+                    matches = self._resolve_packaging_lookup(channel)
+                except Exception:
+                    matches = []
+                exact = [entry for entry in matches if str(entry.channel).lower() == channel.lower()]
+                if len(exact) == 1:
+                    resolved = exact[0].to_dict()
+        return self._clean_app_info(
+            {
+                "app_name": (resolved or {}).get("app_name"),
+                "pkg_name": (resolved or {}).get("pkg_name"),
+                "version_code": (resolved or {}).get("version_code"),
+            }
+        )
+
+    @staticmethod
+    def _package_result_channel(result: JsonDict) -> str:
+        channels = _normalize_string_list(result.get("channels") or [])
+        if channels:
+            return channels[0]
+        return str(result.get("packconfig") or "").strip()
+
+    @staticmethod
+    def _clean_app_info(app_info: JsonDict) -> JsonDict:
+        cleaned = {
+            "app_name": str(app_info.get("app_name") or "").strip(),
+            "pkg_name": str(app_info.get("pkg_name") or "").strip(),
+            "version_code": str(app_info.get("version_code") or "").strip(),
+        }
+        return {key: value for key, value in cleaned.items() if value}
+
+    @staticmethod
+    def _source_mentions_app_info(source_text: str, app_info: JsonDict) -> bool:
+        text = str(source_text or "").strip()
+        if not text:
+            return False
+        pkg_name = str(app_info.get("pkg_name") or "").strip()
+        if pkg_name and pkg_name.lower() in text.lower():
+            return True
+        app_name = str(app_info.get("app_name") or "").strip()
+        return bool(app_name and app_name in text)
 
     def _config_app_info(self) -> JsonDict:
         if not self.oppo_config_path:
@@ -3801,6 +3954,23 @@ class ReviewAgent:
         missing_fields = validation.get("missing_required_fields") or []
         missing_files = validation.get("missing_files") or []
         app_check = validation.get("app_check") or {}
+        target_app = validation.get("target_app_info") or {}
+        if target_app:
+            target_bits = []
+            if target_app.get("app_name"):
+                target_bits.append(str(target_app["app_name"]))
+            if target_app.get("pkg_name"):
+                target_bits.append(str(target_app["pkg_name"]))
+            if target_app.get("version_code"):
+                target_bits.append(f"版本 {target_app['version_code']}")
+            lines.append("- 提交目标：" + " / ".join(target_bits))
+        mismatches = validation.get("target_mismatches") or []
+        if mismatches:
+            mismatch_text = "；".join(
+                f"{item.get('label') or item.get('field')} 配置为 {item.get('config')}，目标为 {item.get('target')}"
+                for item in mismatches[:5]
+            )
+            lines.append("- 配置目标不一致：" + mismatch_text)
         if app_check:
             if app_check.get("created"):
                 app_info = app_check.get("app_info") or {}
@@ -3943,7 +4113,7 @@ class ReviewAgent:
             )
             self.state_store.update_session(
                 session_id,
-                {"last_package_result": _json_safe(result)},
+                self._package_session_patch(result),
             )
             return AgentResponse(
                 format_package_result(result, dry_run=dry_run),

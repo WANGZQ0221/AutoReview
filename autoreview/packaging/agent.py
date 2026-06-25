@@ -12,6 +12,8 @@ from .packlist import (
     require_single_package_channel,
     resolve_packlist_app_name,
     resolve_packlist_app_name_entries,
+    resolve_packlist_channel_entries,
+    scan_packlist,
     scan_packlist_snapshot,
 )
 from .runner import (
@@ -53,7 +55,7 @@ class PackagingAgent:
         project_dir = self._require_project_dir()
         script_path = self._require_script_path()
         resolved_entry = None
-        resolved_channels = [item for item in channels or [] if item]
+        resolved_channels = [_normalize_channel_token(item) for item in channels or [] if item]
         if app_name and not pkg_name:
             matches = resolve_packlist_app_name(project_dir, app_name)
             if not matches:
@@ -74,6 +76,8 @@ class PackagingAgent:
                     f"渠道和包名不匹配：{pkg_name} 对应 {resolved_entry.channel}"
                 )
             resolved_channels = [resolved_entry.channel]
+        if not resolved_entry and len(resolved_channels) == 1:
+            resolved_entry = self._resolve_single_channel(project_dir, resolved_channels[0])
         if not resolved_channels:
             raise PackageError("缺少包名或渠道。可以说“打包 com.example.app”或“打包渠道 xm1067”。")
         job = make_package_job(
@@ -88,6 +92,23 @@ class PackagingAgent:
             result["resolved_package"] = resolved_entry.to_dict()
         result["latest_apks"] = [str(path) for path in find_latest_apks(project_dir)]
         return result
+
+    def _resolve_single_channel(self, project_dir: Path, channel: str):
+        clean_channel = str(channel or "").strip()
+        if not clean_channel:
+            return None
+        try:
+            entries = scan_packlist(project_dir)
+        except PackageError:
+            if not self.settings.packlist_scan_file:
+                return None
+            try:
+                entries = scan_packlist_snapshot(self.settings.packlist_scan_file)
+            except PackageError:
+                return None
+        matches = resolve_packlist_channel_entries(entries, clean_channel)
+        exact = [entry for entry in matches if entry.channel.lower() == clean_channel.lower()]
+        return exact[0] if len(exact) == 1 else None
 
     def package_batch(self, *, dry_run: bool = False, continue_on_error: bool = True) -> list[JsonDict]:
         batch_file = self._require_batch_file()
@@ -329,7 +350,14 @@ def _extract_payload(text: str) -> str:
 def _split_channel_tokens(value: str) -> list[str]:
     """Split a string on Chinese/English separators into channel tokens."""
     items = re.split(r"[,，\s]+|和|与|以及", str(value or "").strip())
-    return [item.strip() for item in items if item.strip()]
+    return [_normalize_channel_token(item) for item in items if item.strip()]
+
+
+def _normalize_channel_token(value: str) -> str:
+    token = str(value or "").strip()
+    if re.fullmatch(r"\d+", token):
+        return f"xm{token}"
+    return token
 
 
 def _looks_like_channel_number_list(value: str) -> bool:

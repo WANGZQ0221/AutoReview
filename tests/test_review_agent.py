@@ -21,6 +21,7 @@ class FakeOppoWorkflowAgent:
         self.list_created_apps_call = None
         self.submit_call = None
         self.ensure_app_created_call = None
+        self.ensure_app_created_pkg_name = None
 
     def status(self, version_code=None):
         self.status_version_code = version_code
@@ -60,12 +61,13 @@ class FakeOppoWorkflowAgent:
             "missing_files": ["release/app.apk"],
         }
 
-    def ensure_app_created(self):
+    def ensure_app_created(self, pkg_name=None):
         self.ensure_app_created_call = True
+        self.ensure_app_created_pkg_name = pkg_name
         return {
             "app_id": "30472919",
-            "app_name": "小学四年级英语",
-            "pkg_name": "com.pelbs.book43",
+            "app_name": "英语四级单词" if pkg_name == "com.pelbs.book1400" else "小学四年级英语",
+            "pkg_name": pkg_name or "com.pelbs.book43",
             "app_create_time": "2021-02-08 22:48:13",
         }
 
@@ -93,9 +95,10 @@ class FakeReadyOppoWorkflowAgent(FakeOppoWorkflowAgent):
 
 
 class FakeMissingRemoteAppWorkflowAgent(FakeReadyOppoWorkflowAgent):
-    def ensure_app_created(self):
+    def ensure_app_created(self, pkg_name=None):
         self.ensure_app_created_call = True
-        raise OppoConfigError("OPPO 当前开发者账号下未确认创建应用：com.example.app")
+        self.ensure_app_created_pkg_name = pkg_name
+        raise OppoConfigError(f"OPPO 当前开发者账号下未确认创建应用：{pkg_name or 'com.example.app'}")
 
 
 class FakeMarketSearcher:
@@ -164,14 +167,19 @@ class FakePackagingAgent:
         self.package_one_calls.append(
             {"app_name": app_name, "pkg_name": pkg_name, "channels": channels or [], "dry_run": dry_run}
         )
+        channel = (channels or ["xm1067"])[0]
+        if str(channel).isdigit():
+            channel = f"xm{channel}"
+        resolved_app_name = app_name or ("英语四级单词" if channel == "xm1400" else "八年级语文下册")
+        resolved_pkg_name = pkg_name or ("com.pelbs.book1400" if channel == "xm1400" else "com.pelbs.book1067")
         return {
             "project_dir": "D:/project",
-            "channels": ["xm1067"],
-            "packconfig": "xm1067",
+            "channels": [channel],
+            "packconfig": channel,
             "resolved_package": {
-                "app_name": app_name or "八年级语文下册",
-                "pkg_name": pkg_name,
-                "channel": "xm1067",
+                "app_name": resolved_app_name,
+                "pkg_name": resolved_pkg_name,
+                "channel": channel,
                 "version_code": "68",
                 "version_name": "3.1067.38.2",
             },
@@ -986,6 +994,66 @@ class ReviewAgentTest(unittest.TestCase):
             self.assertIsNone(fake_agent.submit_call)
             self.assertIn("OPPO 自动提审未执行", response.text)
             self.assertIn("确认提审 OPPO", response.text)
+
+    def test_prepare_submit_prefers_latest_packaged_app_over_stale_session_app(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_agent = FakeReadyOppoWorkflowAgent()
+            state = JsonStateStore(Path(temp_dir) / "state.json")
+            state.update_session(
+                "chat-1",
+                {
+                    "app_info": {
+                        "app_name": "小学四年级英语",
+                        "pkg_name": "com.pelbs.book43",
+                        "version_code": "68",
+                    }
+                },
+            )
+            agent = ReviewAgent(state, oppo_agent_factory=lambda: fake_agent)
+            agent.packaging_agent = FakePackagingAgent()
+
+            agent.handle_message("chat-1", "打包1400")
+            response = agent.handle_message("chat-1", "准备提交", "user-1")
+
+            session = state.get_session("chat-1")
+            self.assertEqual(session["app_info"]["app_name"], "英语四级单词")
+            self.assertEqual(session["app_info"]["pkg_name"], "com.pelbs.book1400")
+            self.assertEqual(fake_agent.ensure_app_created_pkg_name, "com.pelbs.book1400")
+            self.assertIn("提交目标：英语四级单词 / com.pelbs.book1400 / 版本 68", response.text)
+
+    def test_prepare_submit_blocks_when_packaged_target_differs_from_submission_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            config_path = self._write_minimal_config(base_dir)
+            fake_agent = FakeReadyOppoWorkflowAgent()
+            state = JsonStateStore(base_dir / "state.json")
+            state.update_session(
+                "chat-1",
+                {
+                    "last_package_result": {
+                        "channels": ["xm1400"],
+                        "packconfig": "xm1400",
+                        "resolved_package": {
+                            "app_name": "英语四级单词",
+                            "pkg_name": "com.pelbs.book1400",
+                            "channel": "xm1400",
+                            "version_code": "68",
+                        },
+                    }
+                },
+            )
+            agent = ReviewAgent(
+                state,
+                oppo_config_path=config_path,
+                oppo_agent_factory=lambda: fake_agent,
+            )
+
+            response = agent.handle_message("chat-1", "确认提审 OPPO", "user-1")
+
+            self.assertIsNone(fake_agent.submit_call)
+            self.assertIn("OPPO 自动提审未执行", response.text)
+            self.assertIn("配置目标不一致", response.text)
+            self.assertIn("com.pelbs.book1400", response.text)
 
     def test_confirm_oppo_submit_calls_submit_tool(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -51,6 +51,34 @@ class PackagingAgentTest(unittest.TestCase):
             self.assertEqual(result["channels"], ["xm1016"])
             self.assertIn("resolved_package", result)
 
+    def test_package_agent_resolves_single_channel_to_package_info(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            project_dir = self._make_project(base)
+            script_path = base / "package.js"
+            script_path.write_text("runStartProcess();\n", encoding="utf-8")
+            config_path = base / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "packaging": {
+                            "project_dir": str(project_dir),
+                            "script": str(script_path),
+                            "node_command": "node",
+                            "skip_start": True,
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            agent = PackagingAgent(config_path)
+            result = agent.package_one(channels=["xm1016"], dry_run=True)
+
+            self.assertEqual(result["resolved_package"]["app_name"], "四年级英语点读")
+            self.assertEqual(result["resolved_package"]["pkg_name"], "com.pelbs.book1016")
+
     def test_formatters(self):
         single = format_package_result(
             {
